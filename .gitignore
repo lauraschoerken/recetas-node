@@ -1,0 +1,72 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencias
+node_modules
+
+# Carpetas de build
+dist
+dist-ssr
+
+# Archivos locales
+*.local
+
+# Configuración del editor
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+
+# Archivos de proyectos de Visual Studio
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Archivos swap
+*.sw?
+
+# Bloqueo de dependencias
+package-lock.json
+
+# Extras recomendados
+# Variables de entorno
+.env
+.env.*
+
+# TypeScript build info
+tsconfig.tsbuildinfo
+
+# Pruebas y cobertura
+coverage/
+coverage-final.json
+
+# Cachés y builds temporales
+.cache/
+.parcel-cache/
+.next
+out
+build
+.serverless
+
+# Lockfiles alternativos
+yarn.lock
+pnpm-lock.yaml
+
+# Archivos temporales y SO
+Thumbs.db
+desktop.ini
+tmp/
+temp/
+
+# Herramientas/otros
+.turbo/
+.vite/
+.eslintcache
+.nyc_output/
