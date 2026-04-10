@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "WeekPlan" ADD COLUMN "type" TEXT NOT NULL DEFAULT 'meal';
+ALTER TABLE "WeekPlan" ADD COLUMN "consumed" BOOLEAN NOT NULL DEFAULT false;
