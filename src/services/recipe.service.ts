@@ -1,5 +1,9 @@
-import { PrismaClient } from '@prisma/client';
-import { CreateRecipeDto, UpdateRecipeDto, RecipeWithComponents } from '../domain';
+import { PrismaClient } from "@prisma/client";
+import {
+  CreateRecipeDto,
+  UpdateRecipeDto,
+  RecipeWithComponents,
+} from "../domain";
 
 const prisma = new PrismaClient();
 
@@ -9,15 +13,15 @@ const recipeInclude = {
       ingredient: {
         include: {
           conversions: true,
-          variants: true
-        }
+          variants: true,
+        },
       },
       variant: true,
-      cookedVariant: true
-    }
+      cookedVariant: true,
+    },
   },
   components: {
-    orderBy: { sortOrder: 'asc' as const },
+    orderBy: { sortOrder: "asc" as const },
     include: {
       options: {
         include: {
@@ -28,124 +32,135 @@ const recipeInclude = {
                   ingredient: {
                     include: {
                       conversions: true,
-                      variants: true
-                    }
+                      variants: true,
+                    },
                   },
                   variant: true,
-                  cookedVariant: true
-                }
+                  cookedVariant: true,
+                },
               },
               components: {
-                orderBy: { sortOrder: 'asc' as const },
+                orderBy: { sortOrder: "asc" as const },
                 include: {
                   options: {
                     include: {
                       ingredient: {
                         include: {
                           conversions: true,
-                          variants: true
-                        }
+                          variants: true,
+                        },
                       },
                       variant: true,
-                      cookedVariant: true
-                    }
-                  }
-                }
-              }
-            }
+                      cookedVariant: true,
+                    },
+                  },
+                },
+              },
+            },
           },
           ingredient: {
             include: {
               conversions: true,
-              variants: true
-            }
+              variants: true,
+            },
           },
           variant: true,
-          cookedVariant: true
-        }
-      }
-    }
+          cookedVariant: true,
+        },
+      },
+    },
   },
   user: {
-    select: { name: true }
-  }
+    select: { name: true },
+  },
 };
 
 export class RecipeService {
   async getAll(userId: number): Promise<RecipeWithComponents[]> {
     const recipes = await prisma.recipe.findMany({
       where: {
-        OR: [
-          { userId },
-          { isPublic: true }
-        ]
+        OR: [{ userId }, { isPublic: true }],
       },
       include: recipeInclude,
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: "desc" },
     });
 
     return recipes.map((r) => this.mapRecipe(r, r.user.name));
   }
 
-  async getById(id: number, userId: number): Promise<RecipeWithComponents | null> {
+  async getById(
+    id: number,
+    userId: number,
+  ): Promise<RecipeWithComponents | null> {
     const recipe = await prisma.recipe.findFirst({
       where: {
         id,
-        OR: [
-          { userId },
-          { isPublic: true }
-        ]
+        OR: [{ userId }, { isPublic: true }],
       },
-      include: recipeInclude
+      include: recipeInclude,
     });
 
     if (!recipe) return null;
 
     const mapped = this.mapRecipe(recipe, recipe.user.name);
-    console.log('getById - components:', JSON.stringify(mapped.components, null, 2));
+    console.log(
+      "getById - components:",
+      JSON.stringify(mapped.components, null, 2),
+    );
     return mapped;
   }
 
-  async create(data: CreateRecipeDto, userId: number): Promise<RecipeWithComponents> {
-    console.log('Creating recipe with data:', JSON.stringify(data, null, 2));
-    console.log('UserId:', userId);
-    
+  async create(
+    data: CreateRecipeDto,
+    userId: number,
+  ): Promise<RecipeWithComponents> {
+    console.log("Creating recipe with data:", JSON.stringify(data, null, 2));
+    console.log("UserId:", userId);
+
     // Verificar que el usuario existe
     const user = await prisma.user.findUnique({ where: { id: userId } });
-    console.log('User exists:', !!user, user ? user.name : 'N/A');
-    
+    console.log("User exists:", !!user, user ? user.name : "N/A");
+
     if (!user) {
       throw new Error(`User with id ${userId} does not exist`);
     }
-    
+
     // Paso 1: Preparar ingredientes si existen
-    const ingredientData: { quantity: number; unit: string; ingredientId: number; variantId: number | null; cookedVariantId: number | null }[] = [];
-    const validIngredients = (data.ingredients || []).filter(ing => ing.name && ing.name.trim() !== '');
-    
+    const ingredientData: {
+      quantity: number;
+      unit: string;
+      ingredientId: number;
+      variantId: number | null;
+      cookedVariantId: number | null;
+    }[] = [];
+    const validIngredients = (data.ingredients || []).filter(
+      (ing) => ing.name && ing.name.trim() !== "",
+    );
+
     for (const ing of validIngredients) {
       const ingredient = await this.getOrCreateIngredient(ing.name, ing.unit);
       let variantId = (ing as any).variantId || null;
       let cookedVariantId = (ing as any).cookedVariantId || null;
-      
+
       // Si no se especifica variante, usar la por defecto
       if (!variantId) {
         const variants = await prisma.ingredientVariant.findMany({
-          where: { ingredientId: ingredient.id }
+          where: { ingredientId: ingredient.id },
         });
-        const defaultVariant = variants.find(v => v.isDefault) || variants[0];
+        const defaultVariant = variants.find((v) => v.isDefault) || variants[0];
         variantId = defaultVariant?.id || null;
       }
-      
+
       ingredientData.push({
         quantity: ing.quantity,
         unit: ing.unit,
         ingredientId: ingredient.id,
         variantId,
-        cookedVariantId
+        cookedVariantId,
       });
     }
 
-    console.log('Ingredient data prepared:', ingredientData);
+    console.log("Ingredient data prepared:", ingredientData);
 
     // Paso 2: Crear la receta base (sin relaciones anidadas)
     const recipeData: any = {
@@ -161,14 +176,15 @@ export class RecipeService {
       customProtein: (data as any).customProtein || null,
       customCarbs: (data as any).customCarbs || null,
       customFat: (data as any).customFat || null,
-      customFiber: (data as any).customFiber || null
+      customFiber: (data as any).customFiber || null,
+      defaultLocation: data.defaultLocation || null,
     };
 
     const recipe = await prisma.recipe.create({
-      data: recipeData
+      data: recipeData,
     });
 
-    console.log('Recipe created with id:', recipe.id);
+    console.log("Recipe created with id:", recipe.id);
 
     // Paso 2.5: Crear ingredientes por separado
     for (const ing of ingredientData) {
@@ -179,8 +195,8 @@ export class RecipeService {
           quantity: ing.quantity,
           unit: ing.unit,
           variantId: ing.variantId,
-          cookedVariantId: ing.cookedVariantId
-        }
+          cookedVariantId: ing.cookedVariantId,
+        },
       });
     }
 
@@ -188,7 +204,7 @@ export class RecipeService {
     if (data.components && data.components.length > 0) {
       for (let i = 0; i < data.components.length; i++) {
         const comp = data.components[i];
-        
+
         // Crear el componente
         const component = await prisma.recipeComponent.create({
           data: {
@@ -196,8 +212,8 @@ export class RecipeService {
             sortOrder: comp.sortOrder ?? i,
             isOptional: comp.isOptional || false,
             defaultEnabled: comp.defaultEnabled !== false,
-            recipeId: recipe.id
-          }
+            recipeId: recipe.id,
+          },
         });
 
         // Crear las opciones del componente
@@ -205,20 +221,22 @@ export class RecipeService {
           for (const opt of comp.options) {
             let ingredientId: number | null = null;
             let variantId: number | null = null;
-            let cookedVariantId: number | null = (opt as any).cookedVariantId || null;
-            
+            let cookedVariantId: number | null =
+              (opt as any).cookedVariantId || null;
+
             if (opt.ingredientName) {
               const ingredient = await this.getOrCreateIngredient(
                 opt.ingredientName,
-                opt.unit || 'g'
+                opt.unit || "g",
               );
               ingredientId = ingredient.id;
-              
+
               // Obtener la variante por defecto
               const variants = await prisma.ingredientVariant.findMany({
-                where: { ingredientId: ingredient.id }
+                where: { ingredientId: ingredient.id },
               });
-              const defaultVariant = variants.find(v => v.isDefault) || variants[0];
+              const defaultVariant =
+                variants.find((v) => v.isDefault) || variants[0];
               variantId = defaultVariant?.id || null;
             }
 
@@ -227,14 +245,17 @@ export class RecipeService {
                 name: opt.name,
                 isDefault: opt.isDefault || false,
                 componentId: component.id,
-                recipeId: opt.recipeId || null,
+                recipeId:
+                  opt.recipeId && opt.recipeId !== recipe.id
+                    ? opt.recipeId
+                    : null,
                 ingredientId,
                 variantId,
                 cookedVariantId,
                 quantity: opt.quantity || null,
                 unit: opt.unit || null,
-                recipeServings: opt.recipeServings || null
-              }
+                recipeServings: opt.recipeServings || null,
+              },
             });
           }
         }
@@ -244,17 +265,24 @@ export class RecipeService {
     // Paso 4: Recargar y devolver la receta completa
     const fullRecipe = await prisma.recipe.findUnique({
       where: { id: recipe.id },
-      include: recipeInclude
+      include: recipeInclude,
     });
 
     return this.mapRecipe(fullRecipe!, fullRecipe!.user.name);
   }
 
-  async update(id: number, data: UpdateRecipeDto, userId: number): Promise<RecipeWithComponents | null> {
-    console.log('Updating recipe with components:', JSON.stringify(data.components, null, 2));
-    
+  async update(
+    id: number,
+    data: UpdateRecipeDto,
+    userId: number,
+  ): Promise<RecipeWithComponents | null> {
+    console.log(
+      "Updating recipe with components:",
+      JSON.stringify(data.components, null, 2),
+    );
+
     const existing = await prisma.recipe.findFirst({
-      where: { id, userId }
+      where: { id, userId },
     });
 
     if (!existing) return null;
@@ -262,41 +290,48 @@ export class RecipeService {
     // Eliminar ingredientes existentes si se envían nuevos
     if (data.ingredients) {
       await prisma.recipeIngredient.deleteMany({
-        where: { recipeId: id }
+        where: { recipeId: id },
       });
     }
 
     // Eliminar componentes existentes si se envían nuevos
     if (data.components) {
       await prisma.recipeComponent.deleteMany({
-        where: { recipeId: id }
+        where: { recipeId: id },
       });
     }
 
     // Preparar ingredientes si existen
-    const ingredientData: { quantity: number; unit: string; ingredientId: number; variantId: number | null; cookedVariantId: number | null }[] = [];
+    const ingredientData: {
+      quantity: number;
+      unit: string;
+      ingredientId: number;
+      variantId: number | null;
+      cookedVariantId: number | null;
+    }[] = [];
     if (data.ingredients && data.ingredients.length > 0) {
       for (const ing of data.ingredients) {
         const ingredient = await this.getOrCreateIngredient(ing.name, ing.unit);
-        
+
         let variantId = (ing as any).variantId || null;
         let cookedVariantId = (ing as any).cookedVariantId || null;
-        
+
         // Si no se especifica variante de compra, usar la por defecto
         if (!variantId) {
           const variants = await prisma.ingredientVariant.findMany({
-            where: { ingredientId: ingredient.id }
+            where: { ingredientId: ingredient.id },
           });
-          const defaultVariant = variants.find(v => v.isDefault) || variants[0];
+          const defaultVariant =
+            variants.find((v) => v.isDefault) || variants[0];
           variantId = defaultVariant?.id || null;
         }
-        
+
         ingredientData.push({
           quantity: ing.quantity,
           unit: ing.unit,
           ingredientId: ingredient.id,
           variantId,
-          cookedVariantId
+          cookedVariantId,
         });
       }
     }
@@ -317,48 +352,53 @@ export class RecipeService {
         customCarbs: (data as any).customCarbs,
         customFat: (data as any).customFat,
         customFiber: (data as any).customFiber,
+        defaultLocation: data.defaultLocation,
         ...(ingredientData.length > 0 && {
           ingredients: {
-            create: ingredientData
-          }
-        })
-      }
+            create: ingredientData,
+          },
+        }),
+      },
     });
 
     // Crear componentes si existen
     if (data.components && data.components.length > 0) {
       for (let i = 0; i < data.components.length; i++) {
         const comp = data.components[i];
-        
+
         const component = await prisma.recipeComponent.create({
           data: {
             name: comp.name,
             sortOrder: comp.sortOrder ?? i,
             isOptional: comp.isOptional || false,
             defaultEnabled: comp.defaultEnabled !== false,
-            recipeId: id
-          }
+            recipeId: id,
+          },
         });
 
         if (comp.options && comp.options.length > 0) {
           for (const opt of comp.options) {
             let ingredientId: number | null = null;
             let variantId: number | null = null;
-            let cookedVariantId: number | null = (opt as any).cookedVariantId || null;
-            console.log(`[UPDATE] Option "${opt.name}": cookedVariantId=${cookedVariantId}, raw opt.cookedVariantId=${(opt as any).cookedVariantId}`);
-            
+            let cookedVariantId: number | null =
+              (opt as any).cookedVariantId || null;
+            console.log(
+              `[UPDATE] Option "${opt.name}": cookedVariantId=${cookedVariantId}, raw opt.cookedVariantId=${(opt as any).cookedVariantId}`,
+            );
+
             if (opt.ingredientName) {
               const ingredient = await this.getOrCreateIngredient(
                 opt.ingredientName,
-                opt.unit || 'g'
+                opt.unit || "g",
               );
               ingredientId = ingredient.id;
-              
+
               // Obtener la variante por defecto
               const variants = await prisma.ingredientVariant.findMany({
-                where: { ingredientId: ingredient.id }
+                where: { ingredientId: ingredient.id },
               });
-              const defaultVariant = variants.find(v => v.isDefault) || variants[0];
+              const defaultVariant =
+                variants.find((v) => v.isDefault) || variants[0];
               variantId = defaultVariant?.id || null;
             }
 
@@ -367,14 +407,15 @@ export class RecipeService {
                 name: opt.name,
                 isDefault: opt.isDefault || false,
                 componentId: component.id,
-                recipeId: opt.recipeId || null,
+                recipeId:
+                  opt.recipeId && opt.recipeId !== id ? opt.recipeId : null,
                 ingredientId,
                 variantId,
                 cookedVariantId,
                 quantity: opt.quantity || null,
                 unit: opt.unit || null,
-                recipeServings: opt.recipeServings || null
-              }
+                recipeServings: opt.recipeServings || null,
+              },
             });
           }
         }
@@ -384,7 +425,7 @@ export class RecipeService {
     // Recargar y devolver
     const fullRecipe = await prisma.recipe.findUnique({
       where: { id },
-      include: recipeInclude
+      include: recipeInclude,
     });
 
     return this.mapRecipe(fullRecipe!, fullRecipe!.user.name);
@@ -392,13 +433,13 @@ export class RecipeService {
 
   async delete(id: number, userId: number): Promise<boolean> {
     const existing = await prisma.recipe.findFirst({
-      where: { id, userId }
+      where: { id, userId },
     });
 
     if (!existing) return false;
 
     await prisma.recipe.delete({
-      where: { id }
+      where: { id },
     });
 
     return true;
@@ -406,93 +447,121 @@ export class RecipeService {
 
   private async getOrCreateIngredient(name: string, unit: string) {
     const trimmed = name.trim();
-    const normalizedName = trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
+    const normalizedName =
+      trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
 
     // Buscar primero de forma case-insensitive
     let ingredient = await prisma.ingredient.findFirst({
-      where: { 
-        name: { equals: normalizedName, mode: 'insensitive' }
+      where: {
+        name: { equals: normalizedName, mode: "insensitive" },
       },
-      include: { variants: true }
+      include: { variants: true },
     });
 
     if (!ingredient) {
-      const baseUnit = (unit === 'g' || unit === 'ml') ? unit : 'g';
+      const baseUnit = unit === "g" || unit === "ml" ? unit : "g";
       ingredient = await prisma.ingredient.create({
-        data: { 
-          name: normalizedName, 
+        data: {
+          name: normalizedName,
           unit: baseUnit,
           variants: {
             create: {
-              name: 'Crudo',
-              isDefault: true
-            }
-          }
+              name: "Crudo",
+              isDefault: true,
+            },
+          },
         },
-        include: { variants: true }
+        include: { variants: true },
       });
     } else if (!ingredient.variants || ingredient.variants.length === 0) {
       // Si existe pero no tiene variantes, crear la variante por defecto
       await prisma.ingredientVariant.create({
         data: {
-          name: 'Crudo',
+          name: "Crudo",
           isDefault: true,
-          ingredientId: ingredient.id
-        }
+          ingredientId: ingredient.id,
+        },
       });
     }
 
     return ingredient;
   }
 
-  private getQuantityInGrams(quantity: number, usedUnit: string, baseUnit: string, conversions: any[]): number {
+  private getQuantityInGrams(
+    quantity: number,
+    usedUnit: string,
+    baseUnit: string,
+    conversions: any[],
+  ): number {
     const u = usedUnit.toLowerCase();
     const base = baseUnit.toLowerCase();
-    
-    if (u === base || u === 'g' || u === 'ml') {
+
+    if (u === base || u === "g" || u === "ml") {
       return quantity;
     }
-    
-    if (u === 'kg' || u === 'l') {
+
+    if (u === "kg" || u === "l") {
       return quantity * 1000;
     }
-    
+
     if (conversions && conversions.length > 0) {
-      const conversion = conversions.find((c: any) => c.unitName.toLowerCase() === u);
+      const conversion = conversions.find(
+        (c: any) => c.unitName.toLowerCase() === u,
+      );
       if (conversion) {
         return quantity * conversion.gramsPerUnit;
       }
     }
-    
+
     return quantity;
   }
 
-  private getVariantMacros(ingredient: any, variant: any): { calories: number; protein: number; carbs: number; fat: number; fiber: number } {
+  private getVariantMacros(
+    ingredient: any,
+    variant: any,
+  ): {
+    calories: number;
+    protein: number;
+    carbs: number;
+    fat: number;
+    fiber: number;
+  } {
     if (variant) {
       return {
         calories: variant.calories || 0,
         protein: variant.protein || 0,
         carbs: variant.carbs || 0,
         fat: variant.fat || 0,
-        fiber: variant.fiber || 0
+        fiber: variant.fiber || 0,
       };
     }
-    
+
     if (ingredient.variants && ingredient.variants.length > 0) {
-      const defaultVariant = ingredient.variants.find((v: any) => v.isDefault) || ingredient.variants[0];
+      const defaultVariant =
+        ingredient.variants.find((v: any) => v.isDefault) ||
+        ingredient.variants[0];
       return {
         calories: defaultVariant.calories || 0,
         protein: defaultVariant.protein || 0,
         carbs: defaultVariant.carbs || 0,
         fat: defaultVariant.fat || 0,
-        fiber: defaultVariant.fiber || 0
+        fiber: defaultVariant.fiber || 0,
       };
     }
-    
+
     return { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };
   }
 
-  private calculateNutrition(recipe: any, ratio: number = 1): { calories: number; protein: number; carbs: number; fat: number; fiber: number } {
+  private calculateNutrition(
+    recipe: any,
+    ratio: number = 1,
+  ): {
+    calories: number;
+    protein: number;
+    carbs: number;
+    fat: number;
+    fiber: number;
+  } {
     // Si hay macros manuales, usarlos
     if (recipe.customCalories != null) {
       return {
@@ -500,18 +569,27 @@ export class RecipeService {
         protein: (recipe.customProtein || 0) * ratio,
         carbs: (recipe.customCarbs || 0) * ratio,
         fat: (recipe.customFat || 0) * ratio,
-        fiber: (recipe.customFiber || 0) * ratio
+        fiber: (recipe.customFiber || 0) * ratio,
       };
     }
 
-    let calories = 0, protein = 0, carbs = 0, fat = 0, fiber = 0;
+    let calories = 0,
+      protein = 0,
+      carbs = 0,
+      fat = 0,
+      fiber = 0;
 
     for (const ri of recipe.ingredients || []) {
       const ing = ri.ingredient;
       const usedUnit = ri.unit || ing.unit;
-      const gramsUsed = this.getQuantityInGrams(ri.quantity, usedUnit, ing.unit, ing.conversions || []);
+      const gramsUsed = this.getQuantityInGrams(
+        ri.quantity,
+        usedUnit,
+        ing.unit,
+        ing.conversions || [],
+      );
       const factor = (gramsUsed / 100) * ratio;
-      
+
       // Usar cookedVariant si existe, sino variant
       const nutritionVariant = ri.cookedVariant || ri.variant;
       const macros = this.getVariantMacros(ing, nutritionVariant);
@@ -527,16 +605,20 @@ export class RecipeService {
       if (comp.isOptional && comp.defaultEnabled === false) {
         continue;
       }
-      
-      const defaultOption = comp.options.find((o: any) => o.isDefault) || comp.options[0];
-      
+
+      const defaultOption =
+        comp.options.find((o: any) => o.isDefault) || comp.options[0];
+
       if (defaultOption) {
         if (defaultOption.recipe) {
           const recipeServings = defaultOption.recipe.servings || 1;
           // Default to 1 serving of sub-recipe per serving of main recipe
           const usedServings = defaultOption.recipeServings || 1;
           const recipeRatio = ratio * (usedServings / recipeServings);
-          const subNutrition = this.calculateNutrition(defaultOption.recipe, recipeRatio);
+          const subNutrition = this.calculateNutrition(
+            defaultOption.recipe,
+            recipeRatio,
+          );
           calories += subNutrition.calories;
           protein += subNutrition.protein;
           carbs += subNutrition.carbs;
@@ -546,11 +628,17 @@ export class RecipeService {
           const ing = defaultOption.ingredient;
           const qty = defaultOption.quantity || 100;
           const usedUnit = defaultOption.unit || ing.unit;
-          const gramsUsed = this.getQuantityInGrams(qty, usedUnit, ing.unit, ing.conversions || []);
+          const gramsUsed = this.getQuantityInGrams(
+            qty,
+            usedUnit,
+            ing.unit,
+            ing.conversions || [],
+          );
           const factor = (gramsUsed / 100) * ratio;
-          
+
           // Usar cookedVariant si existe, sino variant
-          const nutritionVariant = defaultOption.cookedVariant || defaultOption.variant;
+          const nutritionVariant =
+            defaultOption.cookedVariant || defaultOption.variant;
           const macros = this.getVariantMacros(ing, nutritionVariant);
           calories += macros.calories * factor;
           protein += macros.protein * factor;
@@ -566,7 +654,11 @@ export class RecipeService {
 
   private mapRecipe(recipe: any, authorName?: string): RecipeWithComponents {
     const nutrition = this.calculateNutrition(recipe);
-    const hasNutrition = nutrition.calories > 0 || nutrition.protein > 0 || nutrition.carbs > 0 || nutrition.fat > 0;
+    const hasNutrition =
+      nutrition.calories > 0 ||
+      nutrition.protein > 0 ||
+      nutrition.carbs > 0 ||
+      nutrition.fat > 0;
     const servings = recipe.servings || 1;
 
     return {
@@ -587,22 +679,29 @@ export class RecipeService {
       customCarbs: recipe.customCarbs,
       customFat: recipe.customFat,
       customFiber: recipe.customFiber,
+      defaultLocation: recipe.defaultLocation || null,
       totalCalories: hasNutrition ? Math.round(nutrition.calories) : null,
-      caloriesPerServing: hasNutrition ? Math.round(nutrition.calories / servings) : null,
-      nutrition: hasNutrition ? {
-        calories: Math.round(nutrition.calories),
-        protein: Math.round(nutrition.protein * 10) / 10,
-        carbs: Math.round(nutrition.carbs * 10) / 10,
-        fat: Math.round(nutrition.fat * 10) / 10,
-        fiber: Math.round(nutrition.fiber * 10) / 10
-      } : null,
-      nutritionPerServing: hasNutrition ? {
-        calories: Math.round(nutrition.calories / servings),
-        protein: Math.round((nutrition.protein / servings) * 10) / 10,
-        carbs: Math.round((nutrition.carbs / servings) * 10) / 10,
-        fat: Math.round((nutrition.fat / servings) * 10) / 10,
-        fiber: Math.round((nutrition.fiber / servings) * 10) / 10
-      } : null,
+      caloriesPerServing: hasNutrition
+        ? Math.round(nutrition.calories / servings)
+        : null,
+      nutrition: hasNutrition
+        ? {
+            calories: Math.round(nutrition.calories),
+            protein: Math.round(nutrition.protein * 10) / 10,
+            carbs: Math.round(nutrition.carbs * 10) / 10,
+            fat: Math.round(nutrition.fat * 10) / 10,
+            fiber: Math.round(nutrition.fiber * 10) / 10,
+          }
+        : null,
+      nutritionPerServing: hasNutrition
+        ? {
+            calories: Math.round(nutrition.calories / servings),
+            protein: Math.round((nutrition.protein / servings) * 10) / 10,
+            carbs: Math.round((nutrition.carbs / servings) * 10) / 10,
+            fat: Math.round((nutrition.fat / servings) * 10) / 10,
+            fiber: Math.round((nutrition.fiber / servings) * 10) / 10,
+          }
+        : null,
       ingredients: (recipe.ingredients || []).map((ri: any) => ({
         id: ri.ingredient.id,
         name: ri.ingredient.name,
@@ -621,13 +720,13 @@ export class RecipeService {
           carbs: v.carbs,
           fat: v.fat,
           fiber: v.fiber,
-          weightFactor: v.weightFactor || 1
+          weightFactor: v.weightFactor || 1,
         })),
         conversions: (ri.ingredient.conversions || []).map((c: any) => ({
           id: c.id,
           unitName: c.unitName,
-          gramsPerUnit: c.gramsPerUnit
-        }))
+          gramsPerUnit: c.gramsPerUnit,
+        })),
       })),
       components: (recipe.components || []).map((comp: any) => ({
         id: comp.id,
@@ -637,39 +736,48 @@ export class RecipeService {
         defaultEnabled: comp.defaultEnabled,
         options: comp.options.map((opt: any) => ({
           id: opt.id,
-          name: opt.name,
+          name:
+            opt.name ||
+            (opt.recipe ? opt.recipe.title : null) ||
+            (opt.ingredient ? opt.ingredient.name : null) ||
+            "",
           isDefault: opt.isDefault,
+          recipeId: opt.recipeId || null,
           quantity: opt.quantity,
           unit: opt.unit,
           recipeServings: opt.recipeServings,
           recipe: opt.recipe ? this.mapRecipe(opt.recipe) : null,
-          ingredient: opt.ingredient ? {
-            id: opt.ingredient.id,
-            name: opt.ingredient.name,
-            unit: opt.ingredient.unit,
-            variantId: opt.variantId,
-            variantName: opt.variant?.name,
-            cookedVariantId: opt.cookedVariantId,
-            cookedVariantName: opt.cookedVariant?.name,
-            variants: (opt.ingredient.variants || []).map((v: any) => ({
-              id: v.id,
-              name: v.name,
-              isDefault: v.isDefault,
-              calories: v.calories,
-              protein: v.protein,
-              carbs: v.carbs,
-              fat: v.fat,
-              fiber: v.fiber,
-              weightFactor: v.weightFactor || 1
-            })),
-            conversions: (opt.ingredient.conversions || []).map((c: any) => ({
-              id: c.id,
-              unitName: c.unitName,
-              gramsPerUnit: c.gramsPerUnit
-            }))
-          } : null
-        }))
-      }))
+          ingredient: opt.ingredient
+            ? {
+                id: opt.ingredient.id,
+                name: opt.ingredient.name,
+                unit: opt.ingredient.unit,
+                variantId: opt.variantId,
+                variantName: opt.variant?.name,
+                cookedVariantId: opt.cookedVariantId,
+                cookedVariantName: opt.cookedVariant?.name,
+                variants: (opt.ingredient.variants || []).map((v: any) => ({
+                  id: v.id,
+                  name: v.name,
+                  isDefault: v.isDefault,
+                  calories: v.calories,
+                  protein: v.protein,
+                  carbs: v.carbs,
+                  fat: v.fat,
+                  fiber: v.fiber,
+                  weightFactor: v.weightFactor || 1,
+                })),
+                conversions: (opt.ingredient.conversions || []).map(
+                  (c: any) => ({
+                    id: c.id,
+                    unitName: c.unitName,
+                    gramsPerUnit: c.gramsPerUnit,
+                  }),
+                ),
+              }
+            : null,
+        })),
+      })),
     };
   }
 }

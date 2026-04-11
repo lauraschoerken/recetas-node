@@ -1,11 +1,11 @@
-import { RecipeWithComponents, RecipeComponentOption } from './recipe';
+import { RecipeWithComponents, RecipeComponentOption } from "./recipe";
 
 export interface WeekPlanSelection {
   optionId: number;
   option: RecipeComponentOption;
 }
 
-export type WeekPlanType = 'meal' | 'prep';
+export type WeekPlanType = "meal" | "prep";
 
 export interface WeekPlan {
   id: number;
@@ -16,16 +16,28 @@ export interface WeekPlan {
   consumed: boolean;
   userId: number;
   recipeId: number | null;
+  ingredientId: number | null;
+  ingredientQty: number | null;
+  ingredientUnit: string | null;
   createdAt: Date;
 }
 
 export interface WeekPlanWithDetails extends WeekPlan {
   recipe: RecipeWithComponents | null;
+  ingredient: {
+    id: number;
+    name: string;
+    unit: string;
+    imageUrl?: string | null;
+  } | null;
   selections: WeekPlanSelection[];
 }
 
 export interface CreateWeekPlanDto {
   recipeId?: number;
+  ingredientId?: number;
+  ingredientQty?: number;
+  ingredientUnit?: string;
   plannedDate: string;
   servings?: number;
   type?: WeekPlanType;

@@ -6,6 +6,8 @@ import {
   HomeLocation,
   CookIngredientDto,
 } from "../domain";
+import { householdService } from "./household.service";
+import { alertService } from "./alert.service";
 
 const prisma = new PrismaClient();
 
@@ -40,8 +42,15 @@ export interface HomeItemWithPlanned {
 
 export class HomeItemService {
   async getAll(userId: number): Promise<HomeItemWithPlanned[]> {
+    const householdId = await householdService.getHouseholdId(userId);
+    const household = householdId
+      ? await prisma.household.findUnique({ where: { id: householdId } })
+      : null;
+    const useShared = household?.shareHome;
+    const whereClause = useShared ? { householdId } : { userId };
+
     const items = await prisma.homeItem.findMany({
-      where: { userId },
+      where: whereClause,
       include: homeItemInclude,
       orderBy: [{ location: "asc" }, { addedAt: "desc" }],
     });
@@ -428,7 +437,115 @@ export class HomeItemService {
       }
     }
 
-    return prisma.homeItem.create({
+    const householdId = await householdService.getHouseholdId(userId);
+    const household = householdId
+      ? await prisma.household.findUnique({ where: { id: householdId } })
+      : null;
+
+    // Consolidation: if same ingredient/recipe + same location exists, merge quantities
+    const ownerFilter = household?.shareHome ? { householdId } : { userId };
+
+    if (ingredientId && !data.recipeId) {
+      // Try exact match first (same variant), then fallback to null variant
+      let existing = await prisma.homeItem.findFirst({
+        where: {
+          ...ownerFilter,
+          ingredientId,
+          location: data.location,
+          variantId: data.variantId || null,
+        },
+      });
+      if (!existing && data.variantId) {
+        // If adding with a variant, also try to merge with an item that has no variant
+        existing = await prisma.homeItem.findFirst({
+          where: {
+            ...ownerFilter,
+            ingredientId,
+            location: data.location,
+            variantId: null,
+          },
+        });
+      }
+      if (!existing && !data.variantId) {
+        // If adding without variant, try to merge with any existing item for this ingredient+location
+        existing = await prisma.homeItem.findFirst({
+          where: { ...ownerFilter, ingredientId, location: data.location },
+        });
+      }
+
+      if (existing) {
+        const converted = await this.convertToBaseUnit(
+          ingredientId,
+          data.quantity,
+          data.unit,
+        );
+        const existingConverted = await this.convertToBaseUnit(
+          ingredientId,
+          existing.quantity,
+          existing.unit,
+        );
+        const totalQty = existingConverted.quantity + converted.quantity;
+
+        const updated = await prisma.homeItem.update({
+          where: { id: existing.id },
+          data: {
+            quantity: totalQty,
+            unit: converted.unit,
+            ...(data.variantId ? { variantId: data.variantId } : {}),
+          },
+          include: homeItemInclude,
+        });
+
+        await prisma.homeItemHistory.create({
+          data: {
+            action: "ADDED",
+            quantity: data.quantity,
+            unit: data.unit,
+            origin: "MANUAL",
+            userId,
+            homeItemId: existing.id,
+          },
+        });
+
+        return updated as unknown as HomeItem;
+      }
+    }
+
+    // Recipe consolidation: same recipe + same location → merge servings
+    if (data.recipeId && !ingredientId) {
+      const existing = await prisma.homeItem.findFirst({
+        where: {
+          ...ownerFilter,
+          recipeId: data.recipeId,
+          location: data.location,
+        },
+      });
+
+      if (existing) {
+        const totalQty = existing.quantity + data.quantity;
+
+        const updated = await prisma.homeItem.update({
+          where: { id: existing.id },
+          data: { quantity: totalQty, unit: data.unit },
+          include: homeItemInclude,
+        });
+
+        await prisma.homeItemHistory.create({
+          data: {
+            action: "ADDED",
+            quantity: data.quantity,
+            unit: data.unit,
+            origin: "MANUAL",
+            userId,
+            homeItemId: existing.id,
+          },
+        });
+
+        return updated as unknown as HomeItem;
+      }
+    }
+
+    const item = await prisma.homeItem.create({
       data: {
         location: data.location,
         quantity: data.quantity,
@@ -440,9 +557,57 @@ export class HomeItemService {
         ingredientId,
         recipeId: data.recipeId,
         variantId: data.variantId || null,
+        ...(household?.shareHome ? { householdId } : {}),
       },
       include: homeItemInclude,
-    }) as unknown as HomeItem;
+    });
+
+    // Record history
+    await prisma.homeItemHistory.create({
+      data: {
+        action: "ADDED",
+        quantity: data.quantity,
+        unit: data.unit,
+        origin: "MANUAL",
+        userId,
+        homeItemId: item.id,
+      },
+    });
+
+    return item as unknown as HomeItem;
+  }
+
+  private async convertToBaseUnit(
+    ingredientId: number,
+    quantity: number,
+    unit: string,
+  ): Promise<{ quantity: number; unit: string }> {
+    const ingredient = await prisma.ingredient.findUnique({
+      where: { id: ingredientId },
+      include: { conversions: true },
+    });
+    if (!ingredient) return { quantity, unit };
+
+    const baseUnit = ingredient.preferredUnit || ingredient.unit;
+    if (unit === baseUnit) return { quantity, unit };
+
+    // Try to find conversion from current unit to base
+    const conversion = ingredient.conversions.find((c) => c.unitName === unit);
+    if (conversion) {
+      // Convert to grams first, then to preferred unit
+      const grams = quantity * conversion.gramsPerUnit;
+      const preferredConversion = ingredient.conversions.find(
+        (c) => c.unitName === baseUnit,
+      );
+      if (preferredConversion) {
+        return {
+          quantity: grams / preferredConversion.gramsPerUnit,
+          unit: baseUnit,
+        };
+      }
+      return { quantity: grams, unit: ingredient.unit };
+    }
+    return { quantity, unit };
   }
 
   async update(
@@ -633,6 +798,177 @@ export class HomeItemService {
         message: `${quantityToCook}${item.unit} ${item.variant?.name || "crudo"} → ${Math.round(cookedQuantity)}${item.unit} ${targetVariant.name}`,
       };
     }
+  }
+
+  // ── Search ──
+
+  async search(
+    userId: number,
+    filters: {
+      query?: string;
+      location?: HomeLocation;
+      belowMinimum?: boolean;
+      addedByUserId?: number;
+    },
+  ): Promise<HomeItemWithPlanned[]> {
+    const householdId = await householdService.getHouseholdId(userId);
+    const household = householdId
+      ? await prisma.household.findUnique({ where: { id: householdId } })
+      : null;
+    const useShared = household?.shareHome;
+
+    const where: any = useShared ? { householdId } : { userId };
+    if (filters.location) where.location = filters.location;
+    if (filters.addedByUserId) where.userId = filters.addedByUserId;
+    if (filters.query) {
+      where.OR = [
+        {
+          ingredient: {
+            name: { contains: filters.query, mode: "insensitive" },
+          },
+        },
+        { recipe: { title: { contains: filters.query, mode: "insensitive" } } },
+      ];
+    }
+
+    const items = await prisma.homeItem.findMany({
+      where,
+      include: homeItemInclude,
+      orderBy: [{ location: "asc" }, { addedAt: "desc" }],
+    });
+
+    const { meals, preps, ingredients } =
+      await this.getPlannedServingsMap(userId);
+    const itemConsumption = this.calculateIngredientConsumption(
+      items,
+      ingredients,
+    );
+
+    let result: HomeItemWithPlanned[] = items.map((item) => {
+      if (item.recipeId) {
+        const mealServings = meals.get(item.recipeId) || 0;
+        const prepServings = preps.get(item.recipeId) || 0;
+        return {
+          ...item,
+          plannedMealServings: mealServings,
+          pendingPrepServings: prepServings,
+          projectedTotal: Math.max(
+            0,
+            item.quantity + prepServings - mealServings,
+          ),
+        };
+      } else if (item.ingredientId) {
+        const consumption = itemConsumption.get(item.id) || 0;
+        return {
+          ...item,
+          plannedMealServings: Math.round(consumption * 10) / 10,
+          pendingPrepServings: 0,
+          projectedTotal:
+            Math.round(Math.max(0, item.quantity - consumption) * 10) / 10,
+        };
+      }
+      return {
+        ...item,
+        plannedMealServings: 0,
+        pendingPrepServings: 0,
+        projectedTotal: item.quantity,
+      };
+    });
+
+    if (filters.belowMinimum) {
+      const thresholds = await prisma.ingredientMinThreshold.findMany({
+        where: useShared ? { householdId } : { userId },
+      });
+      const thresholdMap = new Map(
+        thresholds.map((t) => [t.ingredientId, t.minQuantity]),
+      );
+      result = result.filter((item) => {
+        if (!item.ingredientId) return false;
+        const min = thresholdMap.get(item.ingredientId);
+        return min !== undefined && item.quantity < min;
+      });
+    }
+
+    return result;
+  }
+
+  // ── History ──
+
+  async getHistory(homeItemId: number, userId: number) {
+    const item = await prisma.homeItem.findFirst({ where: { id: homeItemId } });
+    if (!item) throw new Error("Item no encontrado");
+
+    return prisma.homeItemHistory.findMany({
+      where: { homeItemId },
+      include: { user: { select: { id: true, name: true } } },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
+  }
+
+  // ── Purchase → Home ──
+
+  async addFromPurchase(
+    userId: number,
+    ingredientId: number,
+    quantity: number,
+    unit: string,
+  ): Promise<HomeItem> {
+    const ingredient = await prisma.ingredient.findUnique({
+      where: { id: ingredientId },
+    });
+    if (!ingredient) throw new Error("Ingrediente no encontrado");
+
+    const location = (ingredient.defaultLocation || "nevera") as HomeLocation;
+    const item = await this.create(userId, {
+      location,
+      quantity,
+      unit,
+      ingredientId,
+    });
+
+    // Override history origin to PURCHASED
+    const lastHistory = await prisma.homeItemHistory.findFirst({
+      where: { homeItemId: item.id },
+      orderBy: { createdAt: "desc" },
+    });
+    if (lastHistory) {
+      await prisma.homeItemHistory.update({
+        where: { id: lastHistory.id },
+        data: { origin: "PURCHASED" },
+      });
+    }
+
+    // Check alerts after adding
+    const totalQty = await this.getTotalQuantity(userId, ingredientId);
+    await alertService.checkAndCreateAlerts({
+      userId,
+      ingredientId,
+      triggerType: "MANUAL",
+      beforeQty: totalQty - quantity,
+      afterQty: totalQty,
+    });
+
+    return item;
+  }
+
+  private async getTotalQuantity(
+    userId: number,
+    ingredientId: number,
+  ): Promise<number> {
+    const householdId = await householdService.getHouseholdId(userId);
+    const household = householdId
+      ? await prisma.household.findUnique({ where: { id: householdId } })
+      : null;
+    const where = household?.shareHome
+      ? { householdId, ingredientId }
+      : { userId, ingredientId };
+
+    const agg = await prisma.homeItem.aggregate({
+      where,
+      _sum: { quantity: true },
+    });
+    return agg._sum.quantity || 0;
   }
 }
 

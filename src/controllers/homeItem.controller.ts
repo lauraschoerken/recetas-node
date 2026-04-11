@@ -1,9 +1,21 @@
-import { JsonController, Get, Post, Put, Delete, Param, Body, QueryParam, Req, UseBefore, HttpCode } from 'routing-controllers';
-import { homeItemService } from '../services';
-import { HomeLocation } from '../domain';
-import { authMiddleware, AuthRequest } from '../middlewares';
+import {
+  JsonController,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Param,
+  Body,
+  QueryParam,
+  Req,
+  UseBefore,
+  HttpCode,
+} from "routing-controllers";
+import { homeItemService } from "../services";
+import { HomeLocation } from "../domain";
+import { authMiddleware, AuthRequest } from "../middlewares";
 
-@JsonController('/home')
+@JsonController("/home")
 @UseBefore(authMiddleware)
 export class HomeItemController {
   /**
@@ -29,8 +41,11 @@ export class HomeItemController {
    *               items:
    *                 $ref: '#/components/schemas/HomeItem'
    */
-  @Get('/')
-  async getAll(@QueryParam('location') location: HomeLocation | undefined, @Req() req: AuthRequest) {
+  @Get("/")
+  async getAll(
+    @QueryParam("location") location: HomeLocation | undefined,
+    @Req() req: AuthRequest,
+  ) {
     const userId = req.userId!;
 
     return location
@@ -78,23 +93,53 @@ export class HomeItemController {
    *       400:
    *         description: Datos inválidos
    */
-  @Post('/')
+  @Post("/")
   @HttpCode(201)
   async create(
-    @Body() body: { location: HomeLocation; quantity: number; unit: string; expiresAt?: string; ingredientId?: number; recipeId?: number; ingredientName?: string; variantId?: number },
-    @Req() req: AuthRequest
+    @Body()
+    body: {
+      location: HomeLocation;
+      quantity: number;
+      unit: string;
+      expiresAt?: string;
+      ingredientId?: number;
+      recipeId?: number;
+      ingredientName?: string;
+      variantId?: number;
+    },
+    @Req() req: AuthRequest,
   ) {
     const userId = req.userId!;
-    const { location, quantity, unit, expiresAt, ingredientId, recipeId, ingredientName, variantId } = body;
+    const {
+      location,
+      quantity,
+      unit,
+      expiresAt,
+      ingredientId,
+      recipeId,
+      ingredientName,
+      variantId,
+    } = body;
 
-    console.log('Create home item:', { location, quantity, unit, recipeId, ingredientId, ingredientName, variantId });
+    console.log("Create home item:", {
+      location,
+      quantity,
+      unit,
+      recipeId,
+      ingredientId,
+      ingredientName,
+      variantId,
+    });
 
     if (!location || quantity === undefined || !unit) {
-      throw { httpCode: 400, message: 'Faltan campos requeridos' };
+      throw { httpCode: 400, message: "Faltan campos requeridos" };
     }
 
     if (!ingredientId && !recipeId && !ingredientName) {
-      throw { httpCode: 400, message: 'Debe especificar un ingrediente o una receta' };
+      throw {
+        httpCode: 400,
+        message: "Debe especificar un ingrediente o una receta",
+      };
     }
 
     return homeItemService.create(userId, {
@@ -105,7 +150,7 @@ export class HomeItemController {
       ingredientId,
       recipeId: recipeId || undefined,
       ingredientName,
-      variantId
+      variantId,
     });
   }
 
@@ -142,11 +187,17 @@ export class HomeItemController {
    *       404:
    *         description: Item no encontrado
    */
-  @Put('/:id')
+  @Put("/:id")
   async update(
-    @Param('id') id: number,
-    @Body() body: { location?: HomeLocation; quantity?: number; unit?: string; expiresAt?: string },
-    @Req() req: AuthRequest
+    @Param("id") id: number,
+    @Body()
+    body: {
+      location?: HomeLocation;
+      quantity?: number;
+      unit?: string;
+      expiresAt?: string;
+    },
+    @Req() req: AuthRequest,
   ) {
     const userId = req.userId!;
     const { location, quantity, unit, expiresAt } = body;
@@ -155,11 +206,11 @@ export class HomeItemController {
       location,
       quantity,
       unit,
-      expiresAt
+      expiresAt,
     });
 
     if (!item) {
-      throw { httpCode: 404, message: 'Item no encontrado' };
+      throw { httpCode: 404, message: "Item no encontrado" };
     }
 
     return item;
@@ -183,14 +234,14 @@ export class HomeItemController {
    *       404:
    *         description: Item no encontrado
    */
-  @Delete('/:id')
+  @Delete("/:id")
   @HttpCode(204)
-  async delete(@Param('id') id: number, @Req() req: AuthRequest) {
+  async delete(@Param("id") id: number, @Req() req: AuthRequest) {
     const userId = req.userId!;
     const deleted = await homeItemService.delete(id, userId);
 
     if (!deleted) {
-      throw { httpCode: 404, message: 'Item no encontrado' };
+      throw { httpCode: 404, message: "Item no encontrado" };
     }
 
     return null;
@@ -235,23 +286,28 @@ export class HomeItemController {
    *       404:
    *         description: Item no encontrado
    */
-  @Post('/:id/cook')
+  @Post("/:id/cook")
   async cookIngredient(
-    @Param('id') id: number,
-    @Body() body: { targetVariantId: number; quantity?: number; targetLocation?: HomeLocation },
-    @Req() req: AuthRequest
+    @Param("id") id: number,
+    @Body()
+    body: {
+      targetVariantId: number;
+      quantity?: number;
+      targetLocation?: HomeLocation;
+    },
+    @Req() req: AuthRequest,
   ) {
     const userId = req.userId!;
 
     if (!body.targetVariantId) {
-      throw { httpCode: 400, message: 'Debe especificar el estado destino' };
+      throw { httpCode: 400, message: "Debe especificar el estado destino" };
     }
 
     try {
       return await homeItemService.cookIngredient(id, userId, {
         targetVariantId: body.targetVariantId,
         quantity: body.quantity,
-        targetLocation: body.targetLocation
+        targetLocation: body.targetLocation,
       });
     } catch (error: any) {
       throw { httpCode: 400, message: error.message };
@@ -279,9 +335,57 @@ export class HomeItemController {
    *       200:
    *         description: Ingredientes procesados
    */
-  @Post('/process-consumed')
+  @Post("/process-consumed")
   async processConsumed(@Req() req: AuthRequest) {
     const userId = req.userId!;
     return homeItemService.processConsumedMeals(userId);
+  }
+
+  @Get("/search")
+  async search(
+    @QueryParam("q") query: string,
+    @QueryParam("location") location: HomeLocation | undefined,
+    @QueryParam("belowMinimum") belowMinimum: boolean,
+    @QueryParam("addedByUserId") addedByUserId: number | undefined,
+    @Req() req: AuthRequest,
+  ) {
+    return homeItemService.search(req.userId!, {
+      query,
+      location,
+      belowMinimum,
+      addedByUserId,
+    });
+  }
+
+  @Get("/:id/history")
+  async getHistory(@Param("id") id: number, @Req() req: AuthRequest) {
+    try {
+      return await homeItemService.getHistory(id, req.userId!);
+    } catch (e: any) {
+      throw { httpCode: 404, message: e.message };
+    }
+  }
+
+  @Post("/from-purchase")
+  async addFromPurchase(
+    @Body() body: { ingredientId: number; quantity: number; unit: string },
+    @Req() req: AuthRequest,
+  ) {
+    if (!body.ingredientId || !body.quantity || !body.unit) {
+      throw {
+        httpCode: 400,
+        message: "ingredientId, quantity y unit son requeridos",
+      };
+    }
+    try {
+      return await homeItemService.addFromPurchase(
+        req.userId!,
+        body.ingredientId,
+        body.quantity,
+        body.unit,
+      );
+    } catch (e: any) {
+      throw { httpCode: 400, message: e.message };
+    }
   }
 }

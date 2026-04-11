@@ -1,5 +1,9 @@
-export { AuthController } from './auth.controller';
-export { RecipeController } from './recipe.controller';
-export { IngredientController } from './ingredient.controller';
-export { ShoppingController } from './shopping.controller';
-export { HomeItemController } from './homeItem.controller';
+export { AuthController } from "./auth.controller";
+export { RecipeController } from "./recipe.controller";
+export { IngredientController } from "./ingredient.controller";
+export { ShoppingController } from "./shopping.controller";
+export { HomeItemController } from "./homeItem.controller";
+export { HouseholdController } from "./household.controller";
+export { AlertController } from "./alert.controller";
+export { BackupController } from "./backup.controller";
+export { PdfController } from "./pdf.controller";

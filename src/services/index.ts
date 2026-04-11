@@ -1,6 +1,10 @@
-export { authService } from './auth.service';
-export { recipeService } from './recipe.service';
-export { ingredientService } from './ingredient.service';
-export { shoppingService } from './shopping.service';
-export { homeItemService } from './homeItem.service';
-export { profileService } from './profile.service';
+export { authService } from "./auth.service";
+export { recipeService } from "./recipe.service";
+export { ingredientService } from "./ingredient.service";
+export { shoppingService } from "./shopping.service";
+export { homeItemService } from "./homeItem.service";
+export { profileService } from "./profile.service";
+export { householdService } from "./household.service";
+export { alertService } from "./alert.service";
+export { backupService } from "./backup.service";
+export { pdfService } from "./pdf.service";

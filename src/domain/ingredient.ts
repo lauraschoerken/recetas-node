@@ -14,7 +14,7 @@ export interface IngredientVariant {
   carbs?: number | null;
   fat?: number | null;
   fiber?: number | null;
-  weightFactor: number;  // Factor de conversión de peso (ej: arroz cocinado = 3x)
+  weightFactor: number; // Factor de conversión de peso (ej: arroz cocinado = 3x)
   ingredientId: number;
 }
 
@@ -22,7 +22,7 @@ export interface Ingredient {
   id: number;
   name: string;
   unit: string;
-  preferredUnit?: string | null;  // Unidad preferida para lista de compra (ej: "diente" para ajo)
+  preferredUnit?: string | null; // Unidad preferida para lista de compra (ej: "diente" para ajo)
   imageUrl?: string | null;
   conversions?: UnitConversion[];
   variants?: IngredientVariant[];
@@ -42,8 +42,9 @@ export interface IngredientWithQuantity {
 
 export interface CreateIngredientDto {
   name: string;
-  unit: 'g' | 'ml';
+  unit: "g" | "ml";
   imageUrl?: string;
+  defaultLocation?: string | null;
   variants?: CreateVariantDto[];
 }
 
@@ -55,14 +56,15 @@ export interface CreateVariantDto {
   carbs?: number;
   fat?: number;
   fiber?: number;
-  weightFactor?: number;  // Factor de conversión de peso (default: 1.0)
+  weightFactor?: number; // Factor de conversión de peso (default: 1.0)
 }
 
 export interface UpdateIngredientDto {
   name?: string;
-  unit?: 'g' | 'ml';
-  preferredUnit?: string | null;  // Unidad preferida para lista de compra
+  unit?: "g" | "ml";
+  preferredUnit?: string | null; // Unidad preferida para lista de compra
   imageUrl?: string | null;
+  defaultLocation?: string | null; // Ubicación por defecto: nevera, congelador, despensa
 }
 
 export interface UpdateVariantDto {
@@ -73,7 +75,7 @@ export interface UpdateVariantDto {
   carbs?: number | null;
   fat?: number | null;
   fiber?: number | null;
-  weightFactor?: number;  // Factor de conversión de peso
+  weightFactor?: number; // Factor de conversión de peso
 }
 
 export interface CreateUnitConversionDto {

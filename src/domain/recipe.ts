@@ -1,4 +1,4 @@
-import { IngredientWithQuantity } from './ingredient';
+import { IngredientWithQuantity } from "./ingredient";
 
 export interface Recipe {
   id: number;
@@ -78,6 +78,7 @@ export interface CreateRecipeDto {
   imageUrl?: string;
   servings?: number;
   isPublic?: boolean;
+  defaultLocation?: string | null;
   ingredients?: {
     name: string;
     quantity: number;
@@ -93,6 +94,7 @@ export interface UpdateRecipeDto {
   imageUrl?: string;
   servings?: number;
   isPublic?: boolean;
+  defaultLocation?: string | null;
   ingredients?: {
     name: string;
     quantity: number;

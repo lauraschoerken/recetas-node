@@ -1,11 +1,20 @@
-import { PrismaClient } from '@prisma/client';
-import { Ingredient, CreateIngredientDto, UpdateIngredientDto, CreateUnitConversionDto, UnitConversion, IngredientVariant, CreateVariantDto, UpdateVariantDto } from '../domain';
+import { PrismaClient } from "@prisma/client";
+import {
+  Ingredient,
+  CreateIngredientDto,
+  UpdateIngredientDto,
+  CreateUnitConversionDto,
+  UnitConversion,
+  IngredientVariant,
+  CreateVariantDto,
+  UpdateVariantDto,
+} from "../domain";
 
 const prisma = new PrismaClient();
 
 const ingredientInclude = {
   conversions: true,
-  variants: true
+  variants: true,
 };
 
 export interface DailyNutrition {
@@ -19,8 +28,8 @@ export interface DailyNutrition {
 export class IngredientService {
   async getAll(): Promise<Ingredient[]> {
     return prisma.ingredient.findMany({
-      orderBy: { name: 'asc' },
-      include: ingredientInclude
+      orderBy: { name: "asc" },
+      include: ingredientInclude,
     });
   }
 
@@ -29,30 +38,33 @@ export class IngredientService {
       where: {
         name: {
           contains: query.toLowerCase(),
-          mode: 'insensitive'
-        }
+          mode: "insensitive",
+        },
       },
       take: 10,
-      orderBy: { name: 'asc' },
-      include: ingredientInclude
+      orderBy: { name: "asc" },
+      include: ingredientInclude,
     });
   }
 
   async create(data: CreateIngredientDto): Promise<Ingredient> {
     const trimmed = data.name.trim();
-    const normalizedName = trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
-    const unit = data.unit === 'ml' ? 'ml' : 'g';
-    
+    const normalizedName =
+      trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
+    const unit = data.unit === "ml" ? "ml" : "g";
+
     const existingExact = await prisma.ingredient.findUnique({
       where: { name: normalizedName },
-      include: ingredientInclude
+      include: ingredientInclude,
     });
 
     // Also check case-insensitive (for existing lowercase entries)
-    const existing = existingExact || await prisma.ingredient.findFirst({
-      where: { name: { equals: normalizedName, mode: 'insensitive' } },
-      include: ingredientInclude
-    });
+    const existing =
+      existingExact ||
+      (await prisma.ingredient.findFirst({
+        where: { name: { equals: normalizedName, mode: "insensitive" } },
+        include: ingredientInclude,
+      }));
 
     if (existing) {
       return prisma.ingredient.update({
@@ -60,9 +72,10 @@ export class IngredientService {
         data: {
           name: normalizedName, // Update to capitalized version
           unit: unit,
-          imageUrl: data.imageUrl ?? existing.imageUrl
+          imageUrl: data.imageUrl ?? existing.imageUrl,
+          defaultLocation: data.defaultLocation ?? existing.defaultLocation,
         },
-        include: ingredientInclude
+        include: ingredientInclude,
       });
     }
 
@@ -70,31 +83,32 @@ export class IngredientService {
       data: {
         name: normalizedName,
         unit: unit,
-        imageUrl: data.imageUrl
+        imageUrl: data.imageUrl,
+        defaultLocation: data.defaultLocation || null,
       },
-      include: ingredientInclude
+      include: ingredientInclude,
     });
 
     // Crear variante por defecto "Crudo" si se proporcionaron macros o no hay variantes
-    const variants = data.variants || [{ name: 'Crudo', isDefault: true }];
+    const variants = data.variants || [{ name: "Crudo", isDefault: true }];
     for (const variant of variants) {
       await prisma.ingredientVariant.create({
         data: {
           name: variant.name,
-          isDefault: variant.isDefault ?? (variants.length === 1),
+          isDefault: variant.isDefault ?? variants.length === 1,
           calories: variant.calories,
           protein: variant.protein,
           carbs: variant.carbs,
           fat: variant.fat,
           fiber: variant.fiber,
-          ingredientId: ingredient.id
-        }
+          ingredientId: ingredient.id,
+        },
       });
     }
 
     return prisma.ingredient.findUnique({
       where: { id: ingredient.id },
-      include: ingredientInclude
+      include: ingredientInclude,
     }) as Promise<Ingredient>;
   }
 
@@ -104,13 +118,14 @@ export class IngredientService {
     for (const data of ingredients) {
       const trimmed = data.name.trim();
       if (!trimmed) continue;
-      const normalizedName = trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
+      const normalizedName =
+        trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
 
-      const unit = data.unit === 'ml' ? 'ml' : 'g';
-      
+      const unit = data.unit === "ml" ? "ml" : "g";
+
       const existing = await prisma.ingredient.findUnique({
         where: { name: normalizedName },
-        include: ingredientInclude
+        include: ingredientInclude,
       });
 
       let ingredient: Ingredient;
@@ -119,49 +134,50 @@ export class IngredientService {
         ingredient = await prisma.ingredient.update({
           where: { id: existing.id },
           data: { unit },
-          include: ingredientInclude
+          include: ingredientInclude,
         });
       } else {
         ingredient = await prisma.ingredient.create({
           data: {
             name: normalizedName,
-            unit: unit
+            unit: unit,
           },
-          include: ingredientInclude
+          include: ingredientInclude,
         });
 
         // Crear variante por defecto "Crudo"
         await prisma.ingredientVariant.create({
           data: {
-            name: 'Crudo',
+            name: "Crudo",
             isDefault: true,
-            ingredientId: ingredient.id
-          }
+            ingredientId: ingredient.id,
+          },
         });
 
-        const defaultConversion = unit === 'g' 
-          ? { unitName: 'kg', gramsPerUnit: 1000 }
-          : { unitName: 'l', gramsPerUnit: 1000 };
+        const defaultConversion =
+          unit === "g"
+            ? { unitName: "kg", gramsPerUnit: 1000 }
+            : { unitName: "l", gramsPerUnit: 1000 };
 
         await prisma.unitConversion.upsert({
           where: {
             ingredientId_unitName: {
               ingredientId: ingredient.id,
-              unitName: defaultConversion.unitName
-            }
+              unitName: defaultConversion.unitName,
+            },
           },
           update: { gramsPerUnit: defaultConversion.gramsPerUnit },
           create: {
             ingredientId: ingredient.id,
             unitName: defaultConversion.unitName,
-            gramsPerUnit: defaultConversion.gramsPerUnit
-          }
+            gramsPerUnit: defaultConversion.gramsPerUnit,
+          },
         });
 
-        ingredient = await prisma.ingredient.findUnique({
+        ingredient = (await prisma.ingredient.findUnique({
           where: { id: ingredient.id },
-          include: ingredientInclude
-        }) as Ingredient;
+          include: ingredientInclude,
+        })) as Ingredient;
       }
 
       results.push(ingredient);
@@ -170,19 +186,26 @@ export class IngredientService {
     return results;
   }
 
-  async update(id: number, data: UpdateIngredientDto): Promise<Ingredient | null> {
+  async update(
+    id: number,
+    data: UpdateIngredientDto,
+  ): Promise<Ingredient | null> {
     const ingredient = await prisma.ingredient.findUnique({ where: { id } });
     if (!ingredient) return null;
 
     return prisma.ingredient.update({
       where: { id },
       data: {
-        name: data.name ? data.name.charAt(0).toUpperCase() + data.name.slice(1).toLowerCase().trim() : undefined,
+        name: data.name
+          ? data.name.charAt(0).toUpperCase() +
+            data.name.slice(1).toLowerCase().trim()
+          : undefined,
         unit: data.unit,
         preferredUnit: data.preferredUnit,
-        imageUrl: data.imageUrl
+        imageUrl: data.imageUrl,
+        defaultLocation: data.defaultLocation,
       },
-      include: ingredientInclude
+      include: ingredientInclude,
     });
   }
 
@@ -197,17 +220,20 @@ export class IngredientService {
   async getById(id: number): Promise<Ingredient | null> {
     return prisma.ingredient.findUnique({
       where: { id },
-      include: ingredientInclude
+      include: ingredientInclude,
     });
   }
 
   // --- Variant methods ---
-  async addVariant(ingredientId: number, data: CreateVariantDto): Promise<IngredientVariant> {
+  async addVariant(
+    ingredientId: number,
+    data: CreateVariantDto,
+  ): Promise<IngredientVariant> {
     // Si esta variante es default, quitar default de las demás
     if (data.isDefault) {
       await prisma.ingredientVariant.updateMany({
         where: { ingredientId },
-        data: { isDefault: false }
+        data: { isDefault: false },
       });
     }
 
@@ -221,20 +247,25 @@ export class IngredientService {
         fat: data.fat,
         fiber: data.fiber,
         weightFactor: data.weightFactor ?? 1.0,
-        ingredientId
-      }
+        ingredientId,
+      },
     });
   }
 
-  async updateVariant(variantId: number, data: UpdateVariantDto): Promise<IngredientVariant | null> {
-    const variant = await prisma.ingredientVariant.findUnique({ where: { id: variantId } });
+  async updateVariant(
+    variantId: number,
+    data: UpdateVariantDto,
+  ): Promise<IngredientVariant | null> {
+    const variant = await prisma.ingredientVariant.findUnique({
+      where: { id: variantId },
+    });
     if (!variant) return null;
 
     // Si esta variante se convierte en default, quitar default de las demás
     if (data.isDefault === true) {
       await prisma.ingredientVariant.updateMany({
         where: { ingredientId: variant.ingredientId, id: { not: variantId } },
-        data: { isDefault: false }
+        data: { isDefault: false },
       });
     }
 
@@ -248,18 +279,20 @@ export class IngredientService {
         carbs: data.carbs,
         fat: data.fat,
         fiber: data.fiber,
-        weightFactor: data.weightFactor
-      }
+        weightFactor: data.weightFactor,
+      },
     });
   }
 
   async deleteVariant(variantId: number): Promise<boolean> {
-    const variant = await prisma.ingredientVariant.findUnique({ where: { id: variantId } });
+    const variant = await prisma.ingredientVariant.findUnique({
+      where: { id: variantId },
+    });
     if (!variant) return false;
 
     // No permitir borrar si es la única variante
     const count = await prisma.ingredientVariant.count({
-      where: { ingredientId: variant.ingredientId }
+      where: { ingredientId: variant.ingredientId },
     });
     if (count <= 1) return false;
 
@@ -268,12 +301,12 @@ export class IngredientService {
     // Si era la default, hacer default a la primera que quede
     if (variant.isDefault) {
       const firstVariant = await prisma.ingredientVariant.findFirst({
-        where: { ingredientId: variant.ingredientId }
+        where: { ingredientId: variant.ingredientId },
       });
       if (firstVariant) {
         await prisma.ingredientVariant.update({
           where: { id: firstVariant.id },
-          data: { isDefault: true }
+          data: { isDefault: true },
         });
       }
     }
@@ -284,25 +317,28 @@ export class IngredientService {
   async getVariants(ingredientId: number): Promise<IngredientVariant[]> {
     return prisma.ingredientVariant.findMany({
       where: { ingredientId },
-      orderBy: { isDefault: 'desc' }
+      orderBy: { isDefault: "desc" },
     });
   }
 
   // --- Conversion methods ---
-  async addConversion(ingredientId: number, data: CreateUnitConversionDto): Promise<UnitConversion> {
+  async addConversion(
+    ingredientId: number,
+    data: CreateUnitConversionDto,
+  ): Promise<UnitConversion> {
     const existing = await prisma.unitConversion.findUnique({
       where: {
         ingredientId_unitName: {
           ingredientId,
-          unitName: data.unitName.toLowerCase()
-        }
-      }
+          unitName: data.unitName.toLowerCase(),
+        },
+      },
     });
 
     if (existing) {
       return prisma.unitConversion.update({
         where: { id: existing.id },
-        data: { gramsPerUnit: data.gramsPerUnit }
+        data: { gramsPerUnit: data.gramsPerUnit },
       });
     }
 
@@ -310,23 +346,30 @@ export class IngredientService {
       data: {
         unitName: data.unitName.toLowerCase(),
         gramsPerUnit: data.gramsPerUnit,
-        ingredientId
-      }
+        ingredientId,
+      },
     });
   }
 
-  async updateConversion(conversionId: number, gramsPerUnit: number): Promise<UnitConversion | null> {
-    const conversion = await prisma.unitConversion.findUnique({ where: { id: conversionId } });
+  async updateConversion(
+    conversionId: number,
+    gramsPerUnit: number,
+  ): Promise<UnitConversion | null> {
+    const conversion = await prisma.unitConversion.findUnique({
+      where: { id: conversionId },
+    });
     if (!conversion) return null;
 
     return prisma.unitConversion.update({
       where: { id: conversionId },
-      data: { gramsPerUnit }
+      data: { gramsPerUnit },
     });
   }
 
   async deleteConversion(conversionId: number): Promise<boolean> {
-    const conversion = await prisma.unitConversion.findUnique({ where: { id: conversionId } });
+    const conversion = await prisma.unitConversion.findUnique({
+      where: { id: conversionId },
+    });
     if (!conversion) return false;
 
     await prisma.unitConversion.delete({ where: { id: conversionId } });
@@ -335,7 +378,7 @@ export class IngredientService {
 
   async getConversions(ingredientId: number): Promise<UnitConversion[]> {
     return prisma.unitConversion.findMany({
-      where: { ingredientId }
+      where: { ingredientId },
     });
   }
 
@@ -349,11 +392,11 @@ export class IngredientService {
     const plans = await prisma.weekPlan.findMany({
       where: {
         userId,
-        type: 'meal',
+        type: "meal",
         plannedDate: {
           gte: startOfDay,
-          lte: endOfDay
-        }
+          lte: endOfDay,
+        },
       },
       include: {
         recipe: {
@@ -363,11 +406,11 @@ export class IngredientService {
                 ingredient: {
                   include: {
                     conversions: true,
-                    variants: true
-                  }
+                    variants: true,
+                  },
                 },
-                variant: true
-              }
+                variant: true,
+              },
             },
             components: {
               include: {
@@ -380,26 +423,26 @@ export class IngredientService {
                             ingredient: {
                               include: {
                                 conversions: true,
-                                variants: true
-                              }
+                                variants: true,
+                              },
                             },
-                            variant: true
-                          }
-                        }
-                      }
+                            variant: true,
+                          },
+                        },
+                      },
                     },
                     ingredient: {
                       include: {
                         conversions: true,
-                        variants: true
-                      }
+                        variants: true,
+                      },
                     },
-                    variant: true
-                  }
-                }
-              }
-            }
-          }
+                    variant: true,
+                  },
+                },
+              },
+            },
+          },
         },
         selections: {
           include: {
@@ -412,26 +455,26 @@ export class IngredientService {
                         ingredient: {
                           include: {
                             conversions: true,
-                            variants: true
-                          }
+                            variants: true,
+                          },
                         },
-                        variant: true
-                      }
-                    }
-                  }
+                        variant: true,
+                      },
+                    },
+                  },
                 },
                 ingredient: {
                   include: {
                     conversions: true,
-                    variants: true
-                  }
+                    variants: true,
+                  },
                 },
-                variant: true
-              }
-            }
-          }
-        }
-      }
+                variant: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     let totalCalories = 0;
@@ -443,7 +486,11 @@ export class IngredientService {
     for (const plan of plans) {
       if (plan.recipe) {
         const servingRatio = plan.servings / plan.recipe.servings;
-        const nutrition = this.calculateRecipeNutrition(plan.recipe, servingRatio, plan.selections || []);
+        const nutrition = this.calculateRecipeNutrition(
+          plan.recipe,
+          servingRatio,
+          plan.selections || [],
+        );
         totalCalories += nutrition.calories;
         totalProtein += nutrition.protein;
         totalCarbs += nutrition.carbs;
@@ -457,33 +504,49 @@ export class IngredientService {
       protein: Math.round(totalProtein * 10) / 10,
       carbs: Math.round(totalCarbs * 10) / 10,
       fat: Math.round(totalFat * 10) / 10,
-      fiber: Math.round(totalFiber * 10) / 10
+      fiber: Math.round(totalFiber * 10) / 10,
     };
   }
 
-  private getQuantityInGrams(quantity: number, usedUnit: string, baseUnit: string, conversions: any[]): number {
+  private getQuantityInGrams(
+    quantity: number,
+    usedUnit: string,
+    baseUnit: string,
+    conversions: any[],
+  ): number {
     const u = usedUnit.toLowerCase();
     const base = baseUnit.toLowerCase();
-    
-    if (u === base || u === 'g' || u === 'ml') {
+
+    if (u === base || u === "g" || u === "ml") {
       return quantity;
     }
-    
-    if (u === 'kg' || u === 'l') {
+
+    if (u === "kg" || u === "l") {
       return quantity * 1000;
     }
-    
+
     if (conversions && conversions.length > 0) {
-      const conversion = conversions.find((c: any) => c.unitName.toLowerCase() === u);
+      const conversion = conversions.find(
+        (c: any) => c.unitName.toLowerCase() === u,
+      );
       if (conversion) {
         return quantity * conversion.gramsPerUnit;
       }
     }
-    
+
     return quantity;
   }
 
-  private getVariantMacros(ingredient: any, variant: any): { calories: number; protein: number; carbs: number; fat: number; fiber: number } {
+  private getVariantMacros(
+    ingredient: any,
+    variant: any,
+  ): {
+    calories: number;
+    protein: number;
+    carbs: number;
+    fat: number;
+    fiber: number;
+  } {
     // Si hay variante específica, usar sus macros
     if (variant) {
       return {
@@ -491,39 +554,49 @@ export class IngredientService {
         protein: variant.protein || 0,
         carbs: variant.carbs || 0,
         fat: variant.fat || 0,
-        fiber: variant.fiber || 0
+        fiber: variant.fiber || 0,
       };
     }
-    
+
     // Si no, buscar la variante por defecto del ingrediente
     if (ingredient.variants && ingredient.variants.length > 0) {
-      const defaultVariant = ingredient.variants.find((v: any) => v.isDefault) || ingredient.variants[0];
+      const defaultVariant =
+        ingredient.variants.find((v: any) => v.isDefault) ||
+        ingredient.variants[0];
       return {
         calories: defaultVariant.calories || 0,
         protein: defaultVariant.protein || 0,
         carbs: defaultVariant.carbs || 0,
         fat: defaultVariant.fat || 0,
-        fiber: defaultVariant.fiber || 0
+        fiber: defaultVariant.fiber || 0,
       };
     }
-    
+
     return { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };
   }
 
-  private calculateRecipeNutrition(recipe: any, ratio: number, selections: any[] = []): DailyNutrition {
-    let calories = 0, protein = 0, carbs = 0, fat = 0, fiber = 0;
+  private calculateRecipeNutrition(
+    recipe: any,
+    ratio: number,
+    selections: any[] = [],
+  ): DailyNutrition {
+    let calories = 0,
+      protein = 0,
+      carbs = 0,
+      fat = 0,
+      fiber = 0;
 
     for (const ri of recipe.ingredients || []) {
       const ing = ri.ingredient;
       const usedUnit = ri.unit || ing.unit;
       const gramsUsed = this.getQuantityInGrams(
-        ri.quantity, 
-        usedUnit, 
-        ing.unit, 
-        ing.conversions || []
+        ri.quantity,
+        usedUnit,
+        ing.unit,
+        ing.conversions || [],
       );
       const factor = (gramsUsed / 100) * ratio;
-      
+
       const macros = this.getVariantMacros(ing, ri.variant);
       calories += macros.calories * factor;
       protein += macros.protein * factor;
@@ -533,14 +606,14 @@ export class IngredientService {
     }
 
     for (const comp of recipe.components || []) {
-      const selectedOption = selections.find((s: any) => 
-        comp.options.some((o: any) => o.id === s.optionId)
+      const selectedOption = selections.find((s: any) =>
+        comp.options.some((o: any) => o.id === s.optionId),
       );
-      
-      const option = selectedOption 
+
+      const option = selectedOption
         ? comp.options.find((o: any) => o.id === selectedOption.optionId)
-        : (comp.options.find((o: any) => o.isDefault) || comp.options[0]);
-      
+        : comp.options.find((o: any) => o.isDefault) || comp.options[0];
+
       if (!option && comp.isOptional) continue;
       if (!option) continue;
 
@@ -568,17 +641,17 @@ export class IngredientService {
         option.quantity || 1,
         usedUnit,
         ing.unit,
-        ing.conversions || []
+        ing.conversions || [],
       );
       const factor = (gramsUsed / 100) * ratio;
-      
+
       const macros = this.getVariantMacros(ing, option.variant);
       return {
         calories: macros.calories * factor,
         protein: macros.protein * factor,
         carbs: macros.carbs * factor,
         fat: macros.fat * factor,
-        fiber: macros.fiber * factor
+        fiber: macros.fiber * factor,
       };
     }
     return { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };

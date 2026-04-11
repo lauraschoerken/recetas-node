@@ -29,6 +29,11 @@ model User {
   weekPlans      WeekPlan[]
   homeItems      HomeItem[]
   shoppingItems  ShoppingItem[]
+  householdMembers  HouseholdMember[]
+  sentInvites       HouseholdInvite[]  @relation("InviteSender")
+  stockAlerts       StockAlert[]
+  homeItemHistories HomeItemHistory[]
+  planningAlertScope String?            // "own" | "all"
 }
 
 model Recipe {
@@ -48,12 +53,14 @@ model Recipe {
   customCarbs    Float?
   customFat      Float?
   customFiber    Float?
+  defaultLocation String?
   user           User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
   ingredients    RecipeIngredient[]
   components     RecipeComponent[]
   weekPlans      WeekPlan[]
   homeItems      HomeItem[]
   usedInOptions  RecipeComponentOption[]  @relation("OptionRecipe")
+  minThresholds  RecipeMinThreshold[]
 }
 
 model RecipeComponent {
@@ -99,6 +106,9 @@ model Ingredient {
   conversions     UnitConversion[]
   variants        IngredientVariant[]
   shoppingItems   ShoppingItem[]
+  weekPlans       WeekPlan[]
+  defaultLocation String?
+  minThresholds   IngredientMinThreshold[]
 }
 
 model IngredientVariant {
@@ -158,8 +168,12 @@ model WeekPlan {
   consumed      Boolean             @default(false)
   userId        Int
   recipeId      Int?
+  ingredientId  Int?
+  ingredientQty Float?
+  ingredientUnit String?
   user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   recipe        Recipe?             @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  ingredient    Ingredient?         @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
   selections    WeekPlanSelection[]
   shoppingItems ShoppingItem[]
   createdAt     DateTime            @default(now())
@@ -190,6 +204,9 @@ model HomeItem {
   ingredient   Ingredient?        @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
   recipe       Recipe?            @relation(fields: [recipeId], references: [id], onDelete: Cascade)
   variant      IngredientVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  householdId  Int?
+  household    Household?         @relation(fields: [householdId], references: [id], onDelete: SetNull)
+  histories    HomeItemHistory[]
 }
 
 model ShoppingItem {
@@ -204,4 +221,109 @@ model ShoppingItem {
   user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   ingredient   Ingredient  @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
   weekPlan     WeekPlan?   @relation(fields: [weekPlanId], references: [id], onDelete: Cascade)
+  householdId  Int?
+  household    Household?  @relation(fields: [householdId], references: [id], onDelete: SetNull)
+}
+
+// ── Household (sharing) ──
+
+model Household {
+  id            Int               @id @default(autoincrement())
+  name          String
+  joinCode      String?           @unique @default(uuid())
+  createdAt     DateTime          @default(now())
+  shareHome     Boolean           @default(true)
+  shareShopping Boolean           @default(true)
+  shareAlerts   Boolean           @default(true)
+  members       HouseholdMember[]
+  invites       HouseholdInvite[]
+  homeItems     HomeItem[]
+  shoppingItems ShoppingItem[]
+  stockAlerts   StockAlert[]
+}
+
+model HouseholdMember {
+  id          Int       @id @default(autoincrement())
+  role        String    @default("MEMBER")
+  joinedAt    DateTime  @default(now())
+  userId      Int
+  householdId Int
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, householdId])
+}
+
+model HouseholdInvite {
+  id          Int       @id @default(autoincrement())
+  email       String
+  token       String    @unique @default(uuid())
+  expiresAt   DateTime
+  accepted    Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  senderId    Int
+  householdId Int
+  sender      User      @relation("InviteSender", fields: [senderId], references: [id], onDelete: Cascade)
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+}
+
+// ── Stock thresholds & alerts ──
+
+model IngredientMinThreshold {
+  id           Int        @id @default(autoincrement())
+  minQuantity  Float
+  unit         String
+  ingredientId Int
+  householdId  Int?
+  userId       Int?
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@unique([ingredientId, householdId])
+  @@unique([ingredientId, userId])
+}
+
+model RecipeMinThreshold {
+  id          Int     @id @default(autoincrement())
+  minServings Float
+  recipeId    Int
+  householdId Int?
+  userId      Int?
+  recipe      Recipe  @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@unique([recipeId, householdId])
+  @@unique([recipeId, userId])
+}
+
+model StockAlert {
+  id           Int        @id @default(autoincrement())
+  status       String     @default("OPEN")
+  triggerType  String
+  beforeQty    Float
+  deltaQty     Float
+  afterQty     Float
+  minimum      Float
+  message      String?
+  createdAt    DateTime   @default(now())
+  snoozedUntil DateTime?
+  userId       Int
+  householdId  Int?
+  ingredientId Int?
+  recipeId     Int?
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  household    Household? @relation(fields: [householdId], references: [id], onDelete: Cascade)
+}
+
+// ── Home item history ──
+
+model HomeItemHistory {
+  id         Int      @id @default(autoincrement())
+  action     String
+  quantity   Float
+  unit       String
+  origin     String
+  createdAt  DateTime @default(now())
+  userId     Int
+  homeItemId Int
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  homeItem   HomeItem @relation(fields: [homeItemId], references: [id], onDelete: Cascade)
 }
