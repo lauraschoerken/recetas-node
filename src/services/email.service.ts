@@ -13,6 +13,7 @@ const transporter = nodemailer.createTransport({
 const FROM_ADDRESS =
   process.env.SMTP_FROM || process.env.SMTP_USER || "noreply@recetas.app";
 const APP_URL = process.env.APP_URL || "http://localhost:5173";
+const SMTP_READY = Boolean(process.env.SMTP_USER && process.env.SMTP_PASS);
 
 export const emailService = {
   async sendHouseholdInvite(params: {
@@ -23,6 +24,13 @@ export const emailService = {
   }) {
     const { toEmail, senderName, householdName, token } = params;
     const inviteUrl = `${APP_URL}/accept-invite?token=${token}`;
+
+    if (!SMTP_READY) {
+      console.warn(
+        "[EMAIL] SMTP not configured. Set SMTP_USER and SMTP_PASS to enable invitation emails.",
+      );
+      return false;
+    }
 
     try {
       await transporter.sendMail({

@@ -8,6 +8,7 @@ export const backupService = {
     const householdId = await householdService.getHouseholdId(userId);
 
     const [
+      userProfile,
       ingredients,
       recipes,
       weekPlans,
@@ -16,6 +17,23 @@ export const backupService = {
       thresholdsIng,
       thresholdsRec,
     ] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          imageUrl: true,
+          weight: true,
+          height: true,
+          age: true,
+          gender: true,
+          activityLevel: true,
+          goal: true,
+          customCalories: true,
+          customProtein: true,
+          customCarbs: true,
+          customFat: true,
+          planningAlertScope: true,
+        },
+      }),
       prisma.ingredient.findMany({
         include: { variants: true, conversions: true },
       }),
@@ -52,6 +70,24 @@ export const backupService = {
       exportDate: new Date().toISOString(),
       version: "1.0",
       data: {
+        userProfile: userProfile
+          ? [
+              {
+                imageUrl: userProfile.imageUrl,
+                weight: userProfile.weight,
+                height: userProfile.height,
+                age: userProfile.age,
+                gender: userProfile.gender,
+                activityLevel: userProfile.activityLevel,
+                goal: userProfile.goal,
+                customCalories: userProfile.customCalories,
+                customProtein: userProfile.customProtein,
+                customCarbs: userProfile.customCarbs,
+                customFat: userProfile.customFat,
+                planningAlertScope: userProfile.planningAlertScope,
+              },
+            ]
+          : [],
         ingredients: ingredients.map((i) => ({
           name: i.name,
           unit: i.unit,
@@ -272,6 +308,96 @@ export const backupService = {
         }
       }
       results.ingredients = { created, skipped, updated };
+    }
+
+    // Import user profile/settings
+    if (
+      data.userProfile &&
+      Array.isArray(data.userProfile) &&
+      data.userProfile[0]
+    ) {
+      const incoming = data.userProfile[0];
+      const current = await prisma.user.findUnique({ where: { id: userId } });
+      if (current) {
+        const mergeIfKeep = <T>(incomingVal: T, currentVal: T) =>
+          currentVal === null || currentVal === undefined || currentVal === ""
+            ? incomingVal
+            : currentVal;
+
+        await prisma.user.update({
+          where: { id: userId },
+          data: {
+            imageUrl:
+              mode === "overwrite"
+                ? (incoming.imageUrl ?? null)
+                : mergeIfKeep(incoming.imageUrl ?? null, current.imageUrl),
+            weight:
+              mode === "overwrite"
+                ? (incoming.weight ?? null)
+                : mergeIfKeep(incoming.weight ?? null, current.weight),
+            height:
+              mode === "overwrite"
+                ? (incoming.height ?? null)
+                : mergeIfKeep(incoming.height ?? null, current.height),
+            age:
+              mode === "overwrite"
+                ? (incoming.age ?? null)
+                : mergeIfKeep(incoming.age ?? null, current.age),
+            gender:
+              mode === "overwrite"
+                ? (incoming.gender ?? null)
+                : mergeIfKeep(incoming.gender ?? null, current.gender),
+            activityLevel:
+              mode === "overwrite"
+                ? (incoming.activityLevel ?? null)
+                : mergeIfKeep(
+                    incoming.activityLevel ?? null,
+                    current.activityLevel,
+                  ),
+            goal:
+              mode === "overwrite"
+                ? (incoming.goal ?? null)
+                : mergeIfKeep(incoming.goal ?? null, current.goal),
+            customCalories:
+              mode === "overwrite"
+                ? (incoming.customCalories ?? null)
+                : mergeIfKeep(
+                    incoming.customCalories ?? null,
+                    current.customCalories,
+                  ),
+            customProtein:
+              mode === "overwrite"
+                ? (incoming.customProtein ?? null)
+                : mergeIfKeep(
+                    incoming.customProtein ?? null,
+                    current.customProtein,
+                  ),
+            customCarbs:
+              mode === "overwrite"
+                ? (incoming.customCarbs ?? null)
+                : mergeIfKeep(
+                    incoming.customCarbs ?? null,
+                    current.customCarbs,
+                  ),
+            customFat:
+              mode === "overwrite"
+                ? (incoming.customFat ?? null)
+                : mergeIfKeep(incoming.customFat ?? null, current.customFat),
+            planningAlertScope:
+              mode === "overwrite"
+                ? (incoming.planningAlertScope ?? null)
+                : mergeIfKeep(
+                    incoming.planningAlertScope ?? null,
+                    current.planningAlertScope,
+                  ),
+          },
+        });
+      }
+      results.userProfile = {
+        created: mode === "overwrite" ? 0 : 1,
+        skipped: 0,
+        updated: mode === "overwrite" ? 1 : 0,
+      };
     }
 
     // Import recipes

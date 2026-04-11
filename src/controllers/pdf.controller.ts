@@ -63,7 +63,7 @@ export class PdfController {
         }
       }
 
-      const pdfBuffer = pdfService.generatePdfBuffer(recipe, {
+      const pdfBuffer = await pdfService.generatePdfBuffer(recipe, {
         selectedOptions,
         showAuthor: body.showAuthor ?? false,
         showVisibility: body.showVisibility ?? false,

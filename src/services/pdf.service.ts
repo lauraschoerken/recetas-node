@@ -46,14 +46,14 @@ export const pdfService = {
     return recipe;
   },
 
-  generatePdfBuffer(
+  async generatePdfBuffer(
     recipe: any,
     options: {
       selectedOptions?: Record<number, number>; // componentId -> optionId
       showAuthor?: boolean;
       showVisibility?: boolean;
     } = {},
-  ): Buffer {
+  ): Promise<Buffer> {
     const {
       selectedOptions = {},
       showAuthor = false,
@@ -82,7 +82,7 @@ export const pdfService = {
     doc
       .fontSize(10)
       .fillColor(gray)
-      .text(metaParts.join(" · "), { align: "center" });
+      .text(metaParts.join(" | "), { align: "center" });
     doc.moveDown(0.5);
 
     // Divider line
@@ -104,7 +104,6 @@ export const pdfService = {
     // Collect all ingredients (direct + from selected component options)
     const allIngredients: { quantity: number; unit: string; name: string }[] =
       [];
-    const referencedRecipes: { id: number; title: string }[] = [];
 
     // Direct ingredients
     for (const ri of recipe.ingredients || []) {
@@ -133,15 +132,11 @@ export const pdfService = {
           name: opt.ingredient.name,
         });
       } else if (opt.recipe) {
-        referencedRecipes.push({ id: opt.recipe.id, title: opt.recipe.title });
-        // Add sub-recipe ingredients
-        for (const ri of opt.recipe.ingredients || []) {
-          allIngredients.push({
-            quantity: ri.quantity,
-            unit: ri.unit || ri.ingredient.unit,
-            name: `${ri.ingredient.name} (${opt.recipe.title})`,
-          });
-        }
+        allIngredients.push({
+          quantity: opt.recipeServings || 1,
+          unit: "receta",
+          name: `${opt.recipe.title} (se descargara otro PDF con esta receta)`,
+        });
       }
     }
 
@@ -160,18 +155,8 @@ export const pdfService = {
       doc
         .fontSize(11)
         .fillColor(dark)
-        .text(`• ${ing.quantity} ${ing.unit} — ${ing.name}`);
+        .text(`- ${ing.quantity} ${ing.unit} - ${ing.name}`);
       doc.moveDown(0.2);
-    }
-
-    // Referenced recipes
-    if (referencedRecipes.length > 0) {
-      doc.moveDown(0.5);
-      doc.fontSize(10).fillColor(gray);
-      for (const ref of referencedRecipes) {
-        doc.text(`📖 ${ref.title} — ver PDF de esta receta por separado`);
-        doc.moveDown(0.2);
-      }
     }
 
     doc.moveDown(0.8);
@@ -213,7 +198,10 @@ export const pdfService = {
 
     doc.end();
 
-    return Buffer.concat(chunks);
+    return await new Promise<Buffer>((resolve, reject) => {
+      doc.on("end", () => resolve(Buffer.concat(chunks)));
+      doc.on("error", reject);
+    });
   },
 
   generatePdfHtml(recipe: any): string {
