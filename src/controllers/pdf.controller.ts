@@ -244,6 +244,14 @@ export class PdfController {
           });
         }
 
+        // Deduplicate by ingredientId (same ingredient can appear twice if also used in a component)
+        const seen = new Set<number>();
+        const uniqueIngredientRows = ingredientRows.filter((row) => {
+          if (seen.has(row.ingredientId)) return false;
+          seen.add(row.ingredientId);
+          return true;
+        });
+
         const createdRecipe = await prisma.recipe.create({
           data: {
             title,
@@ -255,9 +263,9 @@ export class PdfController {
             difficulty: r.difficulty ?? null,
             userId: req.userId!,
             ingredients:
-              ingredientRows.length > 0
+              uniqueIngredientRows.length > 0
                 ? {
-                    create: ingredientRows.map((x) => ({
+                    create: uniqueIngredientRows.map((x) => ({
                       ingredientId: x.ingredientId,
                       quantity: x.quantity,
                       unit: x.unit,
@@ -353,6 +361,13 @@ export class PdfController {
         skippedCount: skipped.length,
       };
     } catch (e: any) {
+      // Convert Prisma unique constraint errors into friendly messages
+      if (e.code === "P2002") {
+        throw {
+          httpCode: 409,
+          message: "Una de las recetas ya existe en tu biblioteca.",
+        };
+      }
       throw { httpCode: e.httpCode ?? 400, message: e.message };
     }
   }
