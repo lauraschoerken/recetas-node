@@ -78,6 +78,101 @@ async function fetchImageBuffer(url: string): Promise<Buffer | null> {
   }
 }
 
+type ExportIngredientMeta = { name: string; quantity: number; unit: string };
+type ExportRequiredRecipeMeta = {
+  id?: number;
+  title: string;
+  servings: number;
+};
+type ExportRecipeMeta = {
+  title: string;
+  description?: string | null;
+  instructions?: string | null;
+  imageUrl?: string | null;
+  servings: number;
+  cookTimeMinutes?: number | null;
+  difficulty?: string | null;
+  ingredients: ExportIngredientMeta[];
+  requiredRecipes: ExportRequiredRecipeMeta[];
+};
+
+type ExportPdfPayload = {
+  app: "recetas-app";
+  version: 2;
+  recipes: ExportRecipeMeta[];
+};
+
+const METADATA_START = "RECETAS_EXPORT_JSON_START:";
+const METADATA_END = ":RECETAS_EXPORT_JSON_END";
+
+function appendMetadataToBuffer(
+  buffer: Buffer,
+  payload?: ExportPdfPayload,
+): Buffer {
+  if (!payload) return buffer;
+  // Appended after %%EOF — PDF viewers ignore trailing data, parser finds it via indexOf.
+  const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString(
+    "base64",
+  );
+  const marker = `\n${METADATA_START}${encoded}${METADATA_END}\n`;
+  return Buffer.concat([buffer, Buffer.from(marker, "ascii")]);
+}
+
+function sanitizeNumber(value: any, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function buildRecipeExportMeta(
+  recipe: any,
+  selectedOptions: Record<number, number>,
+): ExportRecipeMeta {
+  const ingredients: ExportIngredientMeta[] = [];
+  const requiredRecipes: ExportRequiredRecipeMeta[] = [];
+
+  for (const ri of recipe.ingredients || []) {
+    ingredients.push({
+      name: ri.ingredient?.name || "",
+      quantity: sanitizeNumber(ri.quantity, 0),
+      unit: ri.unit || ri.ingredient?.unit || "g",
+    });
+  }
+
+  for (const comp of recipe.components || []) {
+    const selectedOptId = selectedOptions[comp.id];
+    const opt = selectedOptId
+      ? comp.options.find((o: any) => o.id === selectedOptId)
+      : comp.options.find((o: any) => o.isDefault) || comp.options[0];
+    if (!opt) continue;
+
+    if (opt.ingredient) {
+      ingredients.push({
+        name: opt.ingredient.name,
+        quantity: sanitizeNumber(opt.quantity, 0),
+        unit: opt.unit || opt.ingredient.unit || "g",
+      });
+    } else if (opt.recipe) {
+      requiredRecipes.push({
+        id: opt.recipe.id,
+        title: opt.recipe.title,
+        servings: sanitizeNumber(opt.recipeServings, 1),
+      });
+    }
+  }
+
+  return {
+    title: recipe.title,
+    description: recipe.description || null,
+    instructions: recipe.instructions || null,
+    imageUrl: recipe.imageUrl || null,
+    servings: sanitizeNumber(recipe.servings, 4),
+    cookTimeMinutes: recipe.cookTimeMinutes ?? null,
+    difficulty: recipe.difficulty ?? null,
+    ingredients,
+    requiredRecipes,
+  };
+}
+
 // ──────────────────────────────────────────
 // Core renderer — draws one recipe into an open PDFDocument
 // ──────────────────────────────────────────
@@ -555,6 +650,46 @@ async function renderRecipePage(
 }
 
 export const pdfService = {
+  buildImportPayload(
+    entries: { recipe: any; selectedOptions?: Record<number, number> }[],
+  ): ExportPdfPayload {
+    return {
+      app: "recetas-app",
+      version: 2,
+      recipes: entries.map((e) =>
+        buildRecipeExportMeta(e.recipe, e.selectedOptions || {}),
+      ),
+    };
+  },
+
+  parseImportedPdfBuffer(buffer: Buffer): ExportPdfPayload {
+    const raw = buffer.toString("latin1");
+    const start = raw.indexOf(METADATA_START);
+    const end = raw.indexOf(METADATA_END, start + METADATA_START.length);
+    if (start === -1 || end === -1) {
+      throw new Error(
+        "No se encontraron metadatos de importación. Exporta de nuevo el PDF desde esta app.",
+      );
+    }
+    const base64 = raw.slice(start + METADATA_START.length, end);
+    let parsed: any;
+    try {
+      parsed = JSON.parse(Buffer.from(base64, "base64").toString("utf8"));
+    } catch {
+      throw new Error("El PDF no contiene metadatos válidos de receta.");
+    }
+    if (
+      !parsed ||
+      parsed.app !== "recetas-app" ||
+      !Array.isArray(parsed.recipes)
+    ) {
+      throw new Error(
+        "Este PDF no fue generado por una versión compatible de Recetas App.",
+      );
+    }
+    return parsed as ExportPdfPayload;
+  },
+
   async getRecipeDataForPdf(recipeId: number, userId: number) {
     const recipe = await prisma.recipe.findFirst({
       where: { id: recipeId, OR: [{ userId }, { isPublic: true }] },
@@ -604,19 +739,21 @@ export const pdfService = {
       showAuthor?: boolean;
       showVisibility?: boolean;
       lang?: string;
+      importPayload?: ExportPdfPayload;
     } = {},
   ): Promise<Buffer> {
-    const doc = new PDFDocument({ size: "A4", margin: 50 });
+    const doc = new PDFDocument({ size: "A4", margin: 50, compress: false });
     const chunks: Buffer[] = [];
     doc.on("data", (chunk: Buffer) => chunks.push(chunk));
 
     await renderRecipePage(doc, recipe, options);
 
     doc.end();
-    return await new Promise<Buffer>((resolve, reject) => {
+    const pdfBuffer = await new Promise<Buffer>((resolve, reject) => {
       doc.on("end", () => resolve(Buffer.concat(chunks)));
       doc.on("error", reject);
     });
+    return appendMetadataToBuffer(pdfBuffer, options.importPayload);
   },
 
   async generateCombinedPdfBuffer(
@@ -625,9 +762,10 @@ export const pdfService = {
       showAuthor?: boolean;
       showVisibility?: boolean;
       lang?: string;
+      importPayload?: ExportPdfPayload;
     } = {},
   ): Promise<Buffer> {
-    const doc = new PDFDocument({ size: "A4", margin: 50 });
+    const doc = new PDFDocument({ size: "A4", margin: 50, compress: false });
     const chunks: Buffer[] = [];
     doc.on("data", (chunk: Buffer) => chunks.push(chunk));
 
@@ -640,10 +778,11 @@ export const pdfService = {
     }
 
     doc.end();
-    return await new Promise<Buffer>((resolve, reject) => {
+    const combinedBuffer = await new Promise<Buffer>((resolve, reject) => {
       doc.on("end", () => resolve(Buffer.concat(chunks)));
       doc.on("error", reject);
     });
+    return appendMetadataToBuffer(combinedBuffer, options.importPayload);
   },
 
   generatePdfHtml(recipe: any): string {

@@ -16,9 +16,11 @@ import { TestController } from "./controllers/test.controller";
 
 export function createApp() {
   const app = express();
+  const bodyLimit = process.env.JSON_BODY_LIMIT || "10mb";
 
   app.use(cors());
-  app.use(express.json());
+  app.use(express.json({ limit: bodyLimit }));
+  app.use(express.urlencoded({ limit: bodyLimit, extended: true }));
 
   // Determinar qué controladores usar
   const controllers: any[] = [
@@ -59,7 +61,10 @@ export function createApp() {
       _next: express.NextFunction,
     ) => {
       const status = err.httpCode || err.status || 500;
-      const message = err.message || "Error interno del servidor";
+      const message =
+        err.type === "entity.too.large"
+          ? "El archivo es demasiado grande para importarlo. Prueba con un PDF más pequeño o aumenta JSON_BODY_LIMIT en backend."
+          : err.message || "Error interno del servidor";
       res.status(status).json({ error: message });
     },
   );

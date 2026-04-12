@@ -69,6 +69,9 @@ export class PdfController {
         showAuthor: body.showAuthor ?? false,
         showVisibility: body.showVisibility ?? false,
         lang: body.lang,
+        importPayload: pdfService.buildImportPayload([
+          { recipe, selectedOptions },
+        ]),
       });
 
       res.setHeader("Content-Type", "application/pdf");
@@ -127,6 +130,7 @@ export class PdfController {
           showAuthor: body.showAuthor ?? false,
           showVisibility: body.showVisibility ?? false,
           lang: body.lang,
+          importPayload: pdfService.buildImportPayload(resolvedEntries),
         },
       );
 
@@ -182,6 +186,174 @@ export class PdfController {
       return recipe;
     } catch (e: any) {
       throw { httpCode: 400, message: e.message };
+    }
+  }
+
+  @Post("/recipe/import-pdf")
+  @HttpCode(201)
+  async importRecipePdf(
+    @Body() body: { fileBase64: string; filename?: string },
+    @Req() req: AuthRequest,
+  ) {
+    if (!body.fileBase64) {
+      throw { httpCode: 400, message: "PDF requerido" };
+    }
+
+    try {
+      const pdfBuffer = Buffer.from(body.fileBase64, "base64");
+      const payload = pdfService.parseImportedPdfBuffer(pdfBuffer);
+
+      const byTitle = new Map<string, number>();
+      const created: string[] = [];
+      const skipped: { title: string; id: number }[] = [];
+
+      // Pass 1: create missing recipes without linked components first
+      for (const r of payload.recipes) {
+        const title = (r.title || "").trim();
+        if (!title) continue;
+
+        const existing = await prisma.recipe.findFirst({
+          where: { title, userId: req.userId! },
+          select: { id: true },
+        });
+        if (existing) {
+          byTitle.set(title, existing.id);
+          skipped.push({ title, id: existing.id });
+          continue;
+        }
+
+        const ingredientRows: {
+          ingredientId: number;
+          quantity: number;
+          unit: string;
+        }[] = [];
+
+        for (const ing of r.ingredients || []) {
+          const name = (ing.name || "").trim();
+          if (!name) continue;
+          let dbIng = await prisma.ingredient.findUnique({ where: { name } });
+          if (!dbIng) {
+            dbIng = await prisma.ingredient.create({
+              data: { name, unit: ing.unit || "g" },
+            });
+          }
+          ingredientRows.push({
+            ingredientId: dbIng.id,
+            quantity: Number(ing.quantity) || 0,
+            unit: ing.unit || dbIng.unit || "g",
+          });
+        }
+
+        const createdRecipe = await prisma.recipe.create({
+          data: {
+            title,
+            description: r.description || null,
+            instructions: r.instructions || null,
+            imageUrl: r.imageUrl || null,
+            servings: Number(r.servings) || 4,
+            cookTimeMinutes: r.cookTimeMinutes ?? null,
+            difficulty: r.difficulty ?? null,
+            userId: req.userId!,
+            ingredients:
+              ingredientRows.length > 0
+                ? {
+                    create: ingredientRows.map((x) => ({
+                      ingredientId: x.ingredientId,
+                      quantity: x.quantity,
+                      unit: x.unit,
+                    })),
+                  }
+                : undefined,
+          },
+          select: { id: true },
+        });
+
+        byTitle.set(title, createdRecipe.id);
+        created.push(title);
+      }
+
+      // Pass 2: validate and wire nested recipe requirements
+      for (const r of payload.recipes) {
+        const title = (r.title || "").trim();
+        const recipeId = byTitle.get(title);
+        if (!title || !recipeId) continue;
+
+        const targetRecipeWasCreated = created.includes(title);
+        if (!targetRecipeWasCreated) continue;
+
+        const required = r.requiredRecipes || [];
+        let sortOrder = 0;
+        for (const reqRecipe of required) {
+          const reqTitle = (reqRecipe.title || "").trim();
+          if (!reqTitle) continue;
+
+          let linkedId = byTitle.get(reqTitle);
+          if (!linkedId) {
+            // Try by id first (works across users for public recipes)
+            if (reqRecipe.id) {
+              const byId = await prisma.recipe.findFirst({
+                where: {
+                  id: reqRecipe.id,
+                  OR: [{ userId: req.userId! }, { isPublic: true }],
+                },
+                select: { id: true },
+              });
+              if (byId) linkedId = byId.id;
+            }
+          }
+          if (!linkedId) {
+            // Fallback: search by title in own recipes or public ones
+            const existingLinked = await prisma.recipe.findFirst({
+              where: {
+                title: reqTitle,
+                OR: [{ userId: req.userId! }, { isPublic: true }],
+              },
+              select: { id: true },
+            });
+            if (existingLinked) {
+              linkedId = existingLinked.id;
+              byTitle.set(reqTitle, linkedId);
+            }
+          }
+
+          if (!linkedId) {
+            throw {
+              httpCode: 400,
+              message: `Falta la receta anidada "${reqTitle}". Importa primero el PDF que contiene esa receta.`,
+            };
+          }
+
+          await prisma.recipeComponent.create({
+            data: {
+              name: reqTitle,
+              sortOrder,
+              isOptional: false,
+              defaultEnabled: true,
+              recipeId,
+              options: {
+                create: [
+                  {
+                    name: reqTitle,
+                    isDefault: true,
+                    recipeId: linkedId,
+                    recipeServings: Number(reqRecipe.servings) || 1,
+                  },
+                ],
+              },
+            },
+          });
+          sortOrder += 1;
+        }
+      }
+
+      return {
+        created,
+        skipped,
+        importedCount: created.length,
+        skippedCount: skipped.length,
+      };
+    } catch (e: any) {
+      throw { httpCode: e.httpCode ?? 400, message: e.message };
     }
   }
 }
