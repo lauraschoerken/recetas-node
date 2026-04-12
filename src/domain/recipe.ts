@@ -51,6 +51,13 @@ export interface RecipeWithComponents extends Recipe {
   caloriesPerServing?: number | null;
   nutrition?: RecipeNutrition | null;
   nutritionPerServing?: RecipeNutrition | null;
+  customCalories?: number | null;
+  customProtein?: number | null;
+  customCarbs?: number | null;
+  customFat?: number | null;
+  customFiber?: number | null;
+  defaultLocation?: string | null;
+  hasVariants?: boolean;
 }
 
 export interface CreateComponentOptionDto {

@@ -48,6 +48,7 @@ export class PdfController {
       selectedOptions?: Record<string, number>;
       showAuthor?: boolean;
       showVisibility?: boolean;
+      lang?: string;
     },
     @Req() req: AuthRequest,
     @Res() res: Response,
@@ -67,6 +68,7 @@ export class PdfController {
         selectedOptions,
         showAuthor: body.showAuthor ?? false,
         showVisibility: body.showVisibility ?? false,
+        lang: body.lang,
       });
 
       res.setHeader("Content-Type", "application/pdf");
@@ -78,6 +80,65 @@ export class PdfController {
       return res;
     } catch (e: any) {
       throw { httpCode: 404, message: e.message };
+    }
+  }
+
+  @Post("/recipes/combined")
+  async exportCombinedPdf(
+    @Body()
+    body: {
+      entries: { recipeId: number; selectedOptions?: Record<string, number> }[];
+      showAuthor?: boolean;
+      showVisibility?: boolean;
+      lang?: string;
+    },
+    @Req() req: AuthRequest,
+    @Res() res: Response,
+  ) {
+    try {
+      if (!body.entries || body.entries.length === 0) {
+        throw { httpCode: 400, message: "No hay recetas para exportar" };
+      }
+
+      const resolvedEntries: {
+        recipe: any;
+        selectedOptions: Record<number, number>;
+      }[] = [];
+      let combinedTitle = "recetas";
+
+      for (const entry of body.entries) {
+        const recipe = await pdfService.getRecipeDataForPdf(
+          entry.recipeId,
+          req.userId!,
+        );
+        const selectedOptions: Record<number, number> = {};
+        if (entry.selectedOptions) {
+          for (const [k, v] of Object.entries(entry.selectedOptions)) {
+            selectedOptions[parseInt(k)] = v;
+          }
+        }
+        resolvedEntries.push({ recipe, selectedOptions });
+        if (resolvedEntries.length === 1) combinedTitle = recipe.title;
+      }
+
+      const pdfBuffer = await pdfService.generateCombinedPdfBuffer(
+        resolvedEntries,
+        {
+          showAuthor: body.showAuthor ?? false,
+          showVisibility: body.showVisibility ?? false,
+          lang: body.lang,
+        },
+      );
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${combinedTitle}.pdf"`,
+      );
+      res.send(pdfBuffer);
+      return res;
+    } catch (e: any) {
+      throw { httpCode: e.httpCode ?? 500, message: e.message };
     }
   }
 

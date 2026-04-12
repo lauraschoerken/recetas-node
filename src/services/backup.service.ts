@@ -41,7 +41,11 @@ export const backupService = {
         where: { userId },
         include: {
           ingredients: { include: { ingredient: true } },
-          components: { include: { options: true } },
+          components: {
+            include: {
+              options: { include: { recipe: { select: { title: true } } } },
+            },
+          },
         },
       }),
       prisma.weekPlan.findMany({
@@ -137,6 +141,7 @@ export const backupService = {
               quantity: o.quantity,
               unit: o.unit,
               recipeServings: o.recipeServings,
+              linkedRecipeTitle: (o as any).recipe?.title ?? null,
             })),
           })),
         })),
@@ -529,6 +534,34 @@ export const backupService = {
         }
         created++;
       }
+
+      // Pass 2: link sub-recipe references in component options
+      for (const rec of data.recipes) {
+        const createdRec = await prisma.recipe.findFirst({
+          where: { title: rec.title, userId },
+        });
+        if (!createdRec) continue;
+
+        for (const comp of rec.components || []) {
+          const dbComp = await prisma.recipeComponent.findFirst({
+            where: { name: comp.name, recipeId: createdRec.id },
+          });
+          if (!dbComp) continue;
+
+          for (const opt of comp.options || []) {
+            if (!opt.linkedRecipeTitle) continue;
+            const linkedRec = await prisma.recipe.findFirst({
+              where: { title: opt.linkedRecipeTitle, userId },
+            });
+            if (!linkedRec) continue;
+            await prisma.recipeComponentOption.updateMany({
+              where: { componentId: dbComp.id, name: opt.name },
+              data: { recipeId: linkedRec.id },
+            });
+          }
+        }
+      }
+
       results.recipes = { created, skipped, updated };
     }
 

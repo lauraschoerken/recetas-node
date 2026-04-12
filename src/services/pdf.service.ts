@@ -3,6 +3,204 @@ import PDFDocument from "pdfkit";
 
 const prisma = new PrismaClient();
 
+// ──────────────────────────────────────────
+// i18n labels for PDF
+// ──────────────────────────────────────────
+const PDF_LABELS = {
+  es: {
+    servings: "porciones",
+    ingredients: "Ingredientes",
+    instructions: "Instrucciones",
+    author: "Por",
+    public: "Pública",
+    private: "Privada",
+    recipeUnit: "receta",
+    subRecipeNote: "se descargará otro PDF con esta receta",
+    footer: "Exportado desde Recetas App",
+  },
+  en: {
+    servings: "servings",
+    ingredients: "Ingredients",
+    instructions: "Instructions",
+    author: "By",
+    public: "Public",
+    private: "Private",
+    recipeUnit: "recipe",
+    subRecipeNote: "another PDF will be downloaded for this recipe",
+    footer: "Exported from Recetas App",
+  },
+} as const;
+
+type PdfLang = keyof typeof PDF_LABELS;
+function getLabels(lang?: string) {
+  return PDF_LABELS[(lang === "en" ? "en" : "es") as PdfLang];
+}
+
+// ──────────────────────────────────────────
+// Image helper — silently returns null on any error
+// ──────────────────────────────────────────
+async function fetchImageBuffer(url: string): Promise<Buffer | null> {
+  try {
+    if (!url || !url.startsWith("http")) return null;
+    const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
+    if (!res.ok) return null;
+    const ct = res.headers.get("content-type") ?? "";
+    if (!ct.startsWith("image/")) return null;
+    return Buffer.from(await res.arrayBuffer());
+  } catch {
+    return null;
+  }
+}
+
+// ──────────────────────────────────────────
+// Core renderer — draws one recipe into an open PDFDocument
+// ──────────────────────────────────────────
+async function renderRecipePage(
+  doc: any,
+  recipe: any,
+  options: {
+    selectedOptions?: Record<number, number>;
+    showAuthor?: boolean;
+    showVisibility?: boolean;
+    lang?: string;
+  },
+): Promise<void> {
+  const {
+    selectedOptions = {},
+    showAuthor = false,
+    showVisibility = false,
+  } = options;
+  const lbl = getLabels(options.lang);
+
+  const blue = "#2461d3";
+  const darkBlue = "#1a3a6e";
+  const textDark = "#1f2937";
+  const textGray = "#6b7280";
+  const bgLight = "#eff6ff";
+
+  // ── Header bar ─────────────────────────
+  doc.rect(0, 0, 595.28, 88).fill(darkBlue);
+  doc
+    .fontSize(20)
+    .fillColor("#ffffff")
+    .text(recipe.title, 50, 16, { align: "center", width: 495 });
+
+  const metaParts = [`${recipe.servings} ${lbl.servings}`];
+  if (showAuthor && recipe.user?.name)
+    metaParts.push(`${lbl.author} ${recipe.user.name}`);
+  if (showVisibility)
+    metaParts.push(recipe.isPublic ? lbl.public : lbl.private);
+  doc
+    .fontSize(9)
+    .fillColor("#93c5fd")
+    .text(metaParts.join("   |   "), 50, 56, { align: "center", width: 495 });
+
+  doc.y = 104;
+
+  // ── Recipe image ───────────────────────
+  if (recipe.imageUrl) {
+    const imgBuf = await fetchImageBuffer(recipe.imageUrl);
+    if (imgBuf) {
+      try {
+        const imgW = 200;
+        const imgX = (595.28 - imgW) / 2;
+        doc.image(imgBuf, imgX, doc.y, { width: imgW, height: 150 });
+        doc.y += 158;
+      } catch {
+        // skip unsupported format
+      }
+    }
+  }
+
+  doc.moveDown(0.5);
+
+  // ── Description ────────────────────────
+  if (recipe.description) {
+    doc
+      .fontSize(10)
+      .fillColor(textGray)
+      .text(recipe.description, { align: "left" });
+    doc.moveDown(0.8);
+  }
+
+  // ── Section title helper ───────────────
+  const sectionTitle = (title: string) => {
+    doc.moveDown(0.5);
+    const sy = doc.y;
+    doc.rect(50, sy, 495, 26).fill(bgLight);
+    doc.rect(50, sy, 5, 26).fill(blue);
+    doc
+      .fontSize(13)
+      .fillColor(blue)
+      .text(title, 64, sy + 6, { lineBreak: false });
+    doc.y = sy + 32;
+  };
+
+  // ── Collect all ingredients ────────────
+  const allIngredients: { quantity: number; unit: string; name: string }[] = [];
+
+  for (const ri of recipe.ingredients || []) {
+    allIngredients.push({
+      quantity: ri.quantity,
+      unit: ri.unit || ri.ingredient?.unit || "",
+      name: ri.ingredient?.name || "",
+    });
+  }
+
+  for (const comp of recipe.components || []) {
+    const selectedOptId = selectedOptions[comp.id];
+    const opt = selectedOptId
+      ? comp.options.find((o: any) => o.id === selectedOptId)
+      : comp.options.find((o: any) => o.isDefault) || comp.options[0];
+    if (!opt) continue;
+
+    if (opt.ingredient) {
+      allIngredients.push({
+        quantity: opt.quantity || 0,
+        unit: opt.unit || opt.ingredient.unit || "",
+        name: opt.ingredient.name,
+      });
+    } else if (opt.recipe) {
+      allIngredients.push({
+        quantity: opt.recipeServings || 1,
+        unit: lbl.recipeUnit,
+        name: `${opt.recipe.title}  (${lbl.subRecipeNote})`,
+      });
+    }
+  }
+
+  if (allIngredients.length > 0) {
+    sectionTitle(lbl.ingredients);
+    for (const ing of allIngredients) {
+      doc
+        .fontSize(11)
+        .fillColor(textDark)
+        .text(`  ${ing.quantity} ${ing.unit}  -  ${ing.name}`);
+      doc.moveDown(0.18);
+    }
+  }
+
+  // ── Instructions ───────────────────────
+  if (recipe.instructions) {
+    sectionTitle(lbl.instructions);
+    const lines = recipe.instructions.split("\n");
+    let stepNum = 1;
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const isAlreadyNumbered = /^\d+[\.\)]/.test(trimmed);
+      const prefix = isAlreadyNumbered ? "" : `${stepNum}. `;
+      if (!isAlreadyNumbered) stepNum++;
+      doc.fontSize(11).fillColor(textDark).text(`  ${prefix}${trimmed}`);
+      doc.moveDown(0.28);
+    }
+  }
+
+  // ── Footer ─────────────────────────────
+  doc.moveDown(2);
+  doc.fontSize(8).fillColor("#9ca3af").text(lbl.footer, { align: "center" });
+}
+
 export const pdfService = {
   async getRecipeDataForPdf(recipeId: number, userId: number) {
     const recipe = await prisma.recipe.findFirst({
@@ -49,155 +247,46 @@ export const pdfService = {
   async generatePdfBuffer(
     recipe: any,
     options: {
-      selectedOptions?: Record<number, number>; // componentId -> optionId
+      selectedOptions?: Record<number, number>;
       showAuthor?: boolean;
       showVisibility?: boolean;
+      lang?: string;
     } = {},
   ): Promise<Buffer> {
-    const {
-      selectedOptions = {},
-      showAuthor = false,
-      showVisibility = false,
-    } = options;
-
     const doc = new PDFDocument({ size: "A4", margin: 50 });
     const chunks: Buffer[] = [];
     doc.on("data", (chunk: Buffer) => chunks.push(chunk));
 
-    const orange = "#e67e22";
-    const dark = "#2c3e50";
-    const gray = "#777";
-
-    // Header
-    doc.fontSize(24).fillColor(dark).text(recipe.title, { align: "center" });
-    doc.moveDown(0.3);
-
-    const metaParts = [`${recipe.servings} porciones`];
-    if (showAuthor && recipe.user?.name) {
-      metaParts.push(`Por ${recipe.user.name}`);
-    }
-    if (showVisibility) {
-      metaParts.push(recipe.isPublic ? "Pública" : "Privada");
-    }
-    doc
-      .fontSize(10)
-      .fillColor(gray)
-      .text(metaParts.join(" | "), { align: "center" });
-    doc.moveDown(0.5);
-
-    // Divider line
-    doc
-      .strokeColor(orange)
-      .lineWidth(2)
-      .moveTo(50, doc.y)
-      .lineTo(545, doc.y)
-      .stroke();
-    doc.moveDown(1);
-
-    if (recipe.description) {
-      doc.fontSize(10).fillColor("#555").text(recipe.description, {
-        align: "left",
-      });
-      doc.moveDown(0.8);
-    }
-
-    // Collect all ingredients (direct + from selected component options)
-    const allIngredients: { quantity: number; unit: string; name: string }[] =
-      [];
-
-    // Direct ingredients
-    for (const ri of recipe.ingredients || []) {
-      allIngredients.push({
-        quantity: ri.quantity,
-        unit: ri.unit || ri.ingredient.unit,
-        name: ri.ingredient.name,
-      });
-    }
-
-    // Component option ingredients
-    for (const comp of recipe.components || []) {
-      const selectedOptId = selectedOptions[comp.id];
-      let opt;
-      if (selectedOptId) {
-        opt = comp.options.find((o: any) => o.id === selectedOptId);
-      } else {
-        opt = comp.options.find((o: any) => o.isDefault) || comp.options[0];
-      }
-      if (!opt) continue;
-
-      if (opt.ingredient) {
-        allIngredients.push({
-          quantity: opt.quantity || 0,
-          unit: opt.unit || opt.ingredient.unit,
-          name: opt.ingredient.name,
-        });
-      } else if (opt.recipe) {
-        allIngredients.push({
-          quantity: opt.recipeServings || 1,
-          unit: "receta",
-          name: `${opt.recipe.title} (se descargara otro PDF con esta receta)`,
-        });
-      }
-    }
-
-    // Ingredients section
-    doc.fontSize(16).fillColor(orange).text("Ingredientes");
-    doc.moveDown(0.3);
-    doc
-      .strokeColor("#eee")
-      .lineWidth(1)
-      .moveTo(50, doc.y)
-      .lineTo(545, doc.y)
-      .stroke();
-    doc.moveDown(0.5);
-
-    for (const ing of allIngredients) {
-      doc
-        .fontSize(11)
-        .fillColor(dark)
-        .text(`- ${ing.quantity} ${ing.unit} - ${ing.name}`);
-      doc.moveDown(0.2);
-    }
-
-    doc.moveDown(0.8);
-
-    // Instructions
-    if (recipe.instructions) {
-      doc.fontSize(16).fillColor(orange).text("Instrucciones");
-      doc.moveDown(0.3);
-      doc
-        .strokeColor("#eee")
-        .lineWidth(1)
-        .moveTo(50, doc.y)
-        .lineTo(545, doc.y)
-        .stroke();
-      doc.moveDown(0.5);
-
-      const lines = recipe.instructions.split("\n");
-      for (const line of lines) {
-        if (line.trim()) {
-          doc.fontSize(11).fillColor(dark).text(line.trim());
-          doc.moveDown(0.3);
-        }
-      }
-    }
-
-    // Footer
-    doc.moveDown(2);
-    doc
-      .strokeColor("#eee")
-      .lineWidth(1)
-      .moveTo(50, doc.y)
-      .lineTo(545, doc.y)
-      .stroke();
-    doc.moveDown(0.5);
-    doc
-      .fontSize(8)
-      .fillColor("#aaa")
-      .text("Exportado desde Recetas App", { align: "center" });
+    await renderRecipePage(doc, recipe, options);
 
     doc.end();
+    return await new Promise<Buffer>((resolve, reject) => {
+      doc.on("end", () => resolve(Buffer.concat(chunks)));
+      doc.on("error", reject);
+    });
+  },
 
+  async generateCombinedPdfBuffer(
+    entries: { recipe: any; selectedOptions?: Record<number, number> }[],
+    options: {
+      showAuthor?: boolean;
+      showVisibility?: boolean;
+      lang?: string;
+    } = {},
+  ): Promise<Buffer> {
+    const doc = new PDFDocument({ size: "A4", margin: 50 });
+    const chunks: Buffer[] = [];
+    doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+
+    for (let i = 0; i < entries.length; i++) {
+      if (i > 0) doc.addPage();
+      await renderRecipePage(doc, entries[i].recipe, {
+        ...options,
+        selectedOptions: entries[i].selectedOptions,
+      });
+    }
+
+    doc.end();
     return await new Promise<Buffer>((resolve, reject) => {
       doc.on("end", () => resolve(Buffer.concat(chunks)));
       doc.on("error", reject);

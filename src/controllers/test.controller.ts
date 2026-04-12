@@ -1,5 +1,11 @@
-import { JsonController, Post, Body, HttpCode, OnUndefined } from 'routing-controllers';
-import { PrismaClient } from '@prisma/client';
+import {
+  JsonController,
+  Post,
+  Body,
+  HttpCode,
+  OnUndefined,
+} from "routing-controllers";
+import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
@@ -9,23 +15,25 @@ interface CleanupRequest {
   secret?: string;
 }
 
-@JsonController('/test')
+@JsonController("/test")
 export class TestController {
-  
   private isTestEnvironment(): boolean {
-    return process.env.NODE_ENV === 'test' || process.env.ALLOW_TEST_ENDPOINTS === 'true';
+    return (
+      process.env.NODE_ENV === "test" ||
+      process.env.ALLOW_TEST_ENDPOINTS === "true"
+    );
   }
 
-  @Post('/cleanup')
+  @Post("/cleanup")
   @HttpCode(200)
   async cleanup(@Body() body: CleanupRequest) {
     if (!this.isTestEnvironment()) {
-      return { error: 'Test endpoints not available in production' };
+      return { error: "Test endpoints not available in production" };
     }
 
     // Verificar secreto para prevenir uso accidental
-    if (body.secret !== 'cypress-test-secret') {
-      return { error: 'Invalid secret' };
+    if (body.secret !== "cypress-test-secret") {
+      return { error: "Invalid secret" };
     }
 
     try {
@@ -35,30 +43,32 @@ export class TestController {
       }
 
       if (body.email) {
-        const user = await prisma.user.findUnique({ where: { email: body.email } });
+        const user = await prisma.user.findUnique({
+          where: { email: body.email },
+        });
         if (user) {
           await this.cleanupUser(user.id);
           return { success: true, message: `User ${body.email} cleaned up` };
         }
-        return { success: true, message: 'User not found, nothing to clean' };
+        return { success: true, message: "User not found, nothing to clean" };
       }
 
-      return { error: 'userId or email required' };
+      return { error: "userId or email required" };
     } catch (error) {
-      console.error('Cleanup error:', error);
-      return { error: 'Cleanup failed', details: String(error) };
+      console.error("Cleanup error:", error);
+      return { error: "Cleanup failed", details: String(error) };
     }
   }
 
-  @Post('/cleanup-all-test-data')
+  @Post("/cleanup-all-test-data")
   @HttpCode(200)
   async cleanupAllTestData(@Body() body: { secret?: string }) {
     if (!this.isTestEnvironment()) {
-      return { error: 'Test endpoints not available in production' };
+      return { error: "Test endpoints not available in production" };
     }
 
-    if (body.secret !== 'cypress-test-secret') {
-      return { error: 'Invalid secret' };
+    if (body.secret !== "cypress-test-secret") {
+      return { error: "Invalid secret" };
     }
 
     try {
@@ -66,11 +76,11 @@ export class TestController {
       const testUsers = await prisma.user.findMany({
         where: {
           OR: [
-            { email: { contains: 'test' } },
-            { email: { contains: 'cypress' } },
-            { email: { endsWith: '@test.com' } }
-          ]
-        }
+            { email: { contains: "test" } },
+            { email: { contains: "cypress" } },
+            { email: { endsWith: "@test.com" } },
+          ],
+        },
       });
 
       for (const user of testUsers) {
@@ -80,52 +90,52 @@ export class TestController {
       // Eliminar ingredientes de test
       await this.cleanupTestIngredients();
 
-      return { 
-        success: true, 
-        message: `Cleaned up ${testUsers.length} test users and test ingredients` 
+      return {
+        success: true,
+        message: `Cleaned up ${testUsers.length} test users and test ingredients`,
       };
     } catch (error) {
-      console.error('Cleanup all error:', error);
-      return { error: 'Cleanup failed', details: String(error) };
+      console.error("Cleanup all error:", error);
+      return { error: "Cleanup failed", details: String(error) };
     }
   }
 
-  @Post('/cleanup-test-ingredients')
+  @Post("/cleanup-test-ingredients")
   @HttpCode(200)
   async cleanupTestIngredientsEndpoint(@Body() body: { secret?: string }) {
     if (!this.isTestEnvironment()) {
-      return { error: 'Test endpoints not available in production' };
+      return { error: "Test endpoints not available in production" };
     }
 
-    if (body.secret !== 'cypress-test-secret') {
-      return { error: 'Invalid secret' };
+    if (body.secret !== "cypress-test-secret") {
+      return { error: "Invalid secret" };
     }
 
     try {
       const count = await this.cleanupTestIngredients();
       return { success: true, message: `Cleaned up ${count} test ingredients` };
     } catch (error) {
-      console.error('Cleanup ingredients error:', error);
-      return { error: 'Cleanup failed', details: String(error) };
+      console.error("Cleanup ingredients error:", error);
+      return { error: "Cleanup failed", details: String(error) };
     }
   }
 
   private async cleanupUser(userId: number): Promise<void> {
     // Eliminar en orden correcto respetando foreign keys
     await prisma.weekPlanSelection.deleteMany({
-      where: { weekPlan: { userId } }
+      where: { weekPlan: { userId } },
     });
     await prisma.shoppingItem.deleteMany({ where: { userId } });
     await prisma.weekPlan.deleteMany({ where: { userId } });
     await prisma.homeItem.deleteMany({ where: { userId } });
     await prisma.recipeComponentOption.deleteMany({
-      where: { component: { recipe: { userId } } }
+      where: { component: { recipe: { userId } } },
     });
     await prisma.recipeComponent.deleteMany({
-      where: { recipe: { userId } }
+      where: { recipe: { userId } },
     });
     await prisma.recipeIngredient.deleteMany({
-      where: { recipe: { userId } }
+      where: { recipe: { userId } },
     });
     await prisma.recipe.deleteMany({ where: { userId } });
     await prisma.user.delete({ where: { id: userId } }).catch(() => {});
@@ -136,12 +146,12 @@ export class TestController {
     const testIngredients = await prisma.ingredient.findMany({
       where: {
         OR: [
-          { name: { startsWith: 'test_' } },
-          { name: { startsWith: 'Test' } },
-          { name: { contains: '_ing_' } },
-          { name: { matches: '.*\\d{13}.*' } } // Contiene timestamp de 13 dígitos
-        ]
-      }
+          { name: { startsWith: "test_" } },
+          { name: { startsWith: "Test" } },
+          { name: { contains: "_ing_" } },
+          { name: { contains: "_" } }, // timestamp-named test ingredients
+        ],
+      },
     });
 
     // Solo eliminar ingredientes que no están en uso
@@ -150,12 +160,16 @@ export class TestController {
       try {
         // Verificar si está en uso
         const inUse = await prisma.recipeIngredient.findFirst({
-          where: { ingredientId: ingredient.id }
+          where: { ingredientId: ingredient.id },
         });
-        
+
         if (!inUse) {
-          await prisma.ingredientVariant.deleteMany({ where: { ingredientId: ingredient.id } });
-          await prisma.unitConversion.deleteMany({ where: { ingredientId: ingredient.id } });
+          await prisma.ingredientVariant.deleteMany({
+            where: { ingredientId: ingredient.id },
+          });
+          await prisma.unitConversion.deleteMany({
+            where: { ingredientId: ingredient.id },
+          });
           await prisma.ingredient.delete({ where: { id: ingredient.id } });
           deletedCount++;
         }
