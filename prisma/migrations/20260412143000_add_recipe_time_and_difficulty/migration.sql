@@ -1,0 +1,3 @@
+ALTER TABLE "Recipe"
+ADD COLUMN IF NOT EXISTS "cookTimeMinutes" INTEGER,
+ADD COLUMN IF NOT EXISTS "difficulty" TEXT;

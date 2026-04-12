@@ -42,6 +42,8 @@ model Recipe {
   description    String?
   instructions   String?
   imageUrl       String?
+  cookTimeMinutes Int?
+  difficulty     String?
   servings       Int                      @default(4)
   isPublic       Boolean                  @default(false)
   createdAt      DateTime                 @default(now())
