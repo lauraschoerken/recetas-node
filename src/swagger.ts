@@ -247,9 +247,143 @@ const options: swaggerJsdoc.Options = {
             error: { type: "string" },
           },
         },
+        Household: {
+          type: "object",
+          properties: {
+            id: { type: "integer" },
+            name: { type: "string" },
+            joinCode: { type: "string", nullable: true },
+            shareHome: { type: "boolean" },
+            shareShopping: { type: "boolean" },
+            shareAlerts: { type: "boolean" },
+            myRole: { type: "string", enum: ["ADMIN", "MEMBER"] },
+            members: {
+              type: "array",
+              items: { $ref: "#/components/schemas/HouseholdMember" },
+            },
+            invites: {
+              type: "array",
+              items: { $ref: "#/components/schemas/HouseholdInvite" },
+            },
+          },
+        },
+        HouseholdMember: {
+          type: "object",
+          properties: {
+            id: { type: "integer" },
+            role: { type: "string", enum: ["ADMIN", "MEMBER"] },
+            joinedAt: { type: "string", format: "date-time" },
+            userId: { type: "integer" },
+            householdId: { type: "integer" },
+            user: {
+              type: "object",
+              nullable: true,
+              properties: {
+                id: { type: "integer" },
+                name: { type: "string" },
+                email: { type: "string", format: "email" },
+                imageUrl: { type: "string", nullable: true },
+              },
+            },
+          },
+        },
+        HouseholdInvite: {
+          type: "object",
+          properties: {
+            id: { type: "integer" },
+            email: { type: "string", format: "email" },
+            token: { type: "string" },
+            expiresAt: { type: "string", format: "date-time" },
+            accepted: { type: "boolean" },
+          },
+        },
+        Alert: {
+          type: "object",
+          properties: {
+            id: { type: "integer" },
+            type: {
+              type: "string",
+              enum: ["low_stock_ingredient", "low_stock_recipe"],
+            },
+            status: {
+              type: "string",
+              enum: ["unread", "read", "resolved", "dismissed"],
+            },
+            message: { type: "string" },
+            ingredientId: { type: "integer", nullable: true },
+            recipeId: { type: "integer", nullable: true },
+            createdAt: { type: "string", format: "date-time" },
+          },
+        },
+        IngredientThreshold: {
+          type: "object",
+          properties: {
+            id: { type: "integer" },
+            ingredientId: { type: "integer" },
+            minQuantity: { type: "number" },
+            unit: { type: "string" },
+            ingredient: {
+              type: "object",
+              nullable: true,
+              properties: {
+                id: { type: "integer" },
+                name: { type: "string" },
+              },
+            },
+          },
+        },
+        RecipeThreshold: {
+          type: "object",
+          properties: {
+            id: { type: "integer" },
+            recipeId: { type: "integer" },
+            minServings: { type: "number" },
+            recipe: {
+              type: "object",
+              nullable: true,
+              properties: {
+                id: { type: "integer" },
+                title: { type: "string" },
+              },
+            },
+          },
+        },
       },
     },
     security: [{ bearerAuth: [] }],
+    tags: [
+      { name: "Auth", description: "Autenticación y gestión de cuenta" },
+      { name: "Recetas", description: "CRUD de recetas" },
+      { name: "Ingredientes", description: "CRUD de ingredientes" },
+      { name: "Variantes", description: "Estados de cocción de ingredientes" },
+      { name: "Conversiones", description: "Conversiones de unidades" },
+      { name: "Almacenamiento", description: "Nevera, congelador y despensa" },
+      {
+        name: "Plan Semanal",
+        description: "Planificación de comidas semanales",
+      },
+      {
+        name: "Lista de Compra",
+        description: "Generación y gestión de la lista de compra",
+      },
+      {
+        name: "Hogar",
+        description: "Gestión del hogar compartido e invitaciones",
+      },
+      {
+        name: "Alertas",
+        description: "Alertas de stock bajo y umbrales mínimos",
+      },
+      {
+        name: "Perfil",
+        description: "Perfil nutricional y macros recomendados",
+      },
+      {
+        name: "PDF",
+        description: "Exportación e importación de recetas en PDF",
+      },
+      { name: "Backup", description: "Exportación e importación de datos" },
+    ],
   },
   apis: ["./src/controllers/*.ts"],
 };

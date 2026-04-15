@@ -19,6 +19,38 @@ const prisma = new PrismaClient();
 @JsonController("/pdf")
 @UseBefore(authMiddleware)
 export class PdfController {
+  /**
+   * @swagger
+   * /api/pdf/recipe/{id}:
+   *   get:
+   *     tags: [PDF]
+   *     summary: Obtener HTML de la receta para previsualización PDF
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: integer
+   *     responses:
+   *       200:
+   *         description: HTML generado y datos de la receta
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 html:
+   *                   type: string
+   *                 recipe:
+   *                   type: object
+   *                   properties:
+   *                     id:
+   *                       type: integer
+   *                     title:
+   *                       type: string
+   *       404:
+   *         description: Receta no encontrada
+   */
   @Get("/recipe/:id")
   async exportRecipe(@Param("id") id: number, @Req() req: AuthRequest) {
     try {
@@ -30,6 +62,24 @@ export class PdfController {
     }
   }
 
+  /**
+   * @swagger
+   * /api/pdf/recipe/{id}/data:
+   *   get:
+   *     tags: [PDF]
+   *     summary: Obtener datos completos de la receta para PDF
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: integer
+   *     responses:
+   *       200:
+   *         description: Datos de la receta
+   *       404:
+   *         description: Receta no encontrada
+   */
   @Get("/recipe/:id/data")
   async getRecipeData(@Param("id") id: number, @Req() req: AuthRequest) {
     try {
@@ -40,6 +90,47 @@ export class PdfController {
     }
   }
 
+  /**
+   * @swagger
+   * /api/pdf/recipe/{id}/pdf:
+   *   post:
+   *     tags: [PDF]
+   *     summary: Generar y descargar PDF de una receta
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: integer
+   *     requestBody:
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               selectedOptions:
+   *                 type: object
+   *                 description: Mapa slotId → optionId para recetas con opciones
+   *               showAuthor:
+   *                 type: boolean
+   *                 example: false
+   *               showVisibility:
+   *                 type: boolean
+   *                 example: false
+   *               lang:
+   *                 type: string
+   *                 example: es
+   *     responses:
+   *       200:
+   *         description: PDF generado
+   *         content:
+   *           application/pdf:
+   *             schema:
+   *               type: string
+   *               format: binary
+   *       404:
+   *         description: Receta no encontrada
+   */
   @Post("/recipe/:id/pdf")
   async exportRecipePdf(
     @Param("id") id: number,
@@ -86,6 +177,47 @@ export class PdfController {
     }
   }
 
+  /**
+   * @swagger
+   * /api/pdf/recipes/combined:
+   *   post:
+   *     tags: [PDF]
+   *     summary: Generar PDF combinado con varias recetas
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [entries]
+   *             properties:
+   *               entries:
+   *                 type: array
+   *                 items:
+   *                   type: object
+   *                   required: [recipeId]
+   *                   properties:
+   *                     recipeId:
+   *                       type: integer
+   *                     selectedOptions:
+   *                       type: object
+   *               showAuthor:
+   *                 type: boolean
+   *               showVisibility:
+   *                 type: boolean
+   *               lang:
+   *                 type: string
+   *     responses:
+   *       200:
+   *         description: PDF combinado generado
+   *         content:
+   *           application/pdf:
+   *             schema:
+   *               type: string
+   *               format: binary
+   *       400:
+   *         description: No hay recetas para exportar
+   */
   @Post("/recipes/combined")
   async exportCombinedPdf(
     @Body()
@@ -146,6 +278,28 @@ export class PdfController {
     }
   }
 
+  /**
+   * @swagger
+   * /api/pdf/recipe/import:
+   *   post:
+   *     tags: [PDF]
+   *     summary: Importar receta desde HTML de PDF previamente exportado
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [html]
+   *             properties:
+   *               html:
+   *                 type: string
+   *     responses:
+   *       201:
+   *         description: Receta importada
+   *       400:
+   *         description: HTML requerido o error de parsing
+   */
   @Post("/recipe/import")
   @HttpCode(201)
   async importRecipe(@Body() body: { html: string }, @Req() req: AuthRequest) {
@@ -189,6 +343,31 @@ export class PdfController {
     }
   }
 
+  /**
+   * @swagger
+   * /api/pdf/recipe/import-pdf:
+   *   post:
+   *     tags: [PDF]
+   *     summary: Importar receta desde un archivo PDF en base64
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [fileBase64]
+   *             properties:
+   *               fileBase64:
+   *                 type: string
+   *                 description: Contenido del PDF codificado en base64
+   *               filename:
+   *                 type: string
+   *     responses:
+   *       201:
+   *         description: Receta importada desde PDF
+   *       400:
+   *         description: PDF requerido o error de procesamiento
+   */
   @Post("/recipe/import-pdf")
   @HttpCode(201)
   async importRecipePdf(

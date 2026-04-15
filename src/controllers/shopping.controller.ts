@@ -17,6 +17,39 @@ import { authMiddleware, AuthRequest } from "../middlewares";
 @JsonController("")
 @UseBefore(authMiddleware)
 export class ShoppingController {
+  /**
+   * @swagger
+   * /api/week-plan:
+   *   get:
+   *     tags: [Plan Semanal]
+   *     summary: Obtener plan semanal
+   *     parameters:
+   *       - in: query
+   *         name: startDate
+   *         required: true
+   *         schema:
+   *           type: string
+   *           format: date
+   *         example: "2026-04-14"
+   *       - in: query
+   *         name: endDate
+   *         required: true
+   *         schema:
+   *           type: string
+   *           format: date
+   *         example: "2026-04-20"
+   *     responses:
+   *       200:
+   *         description: Entradas del plan semanal
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 $ref: '#/components/schemas/WeekPlan'
+   *       400:
+   *         description: startDate y endDate son requeridos
+   */
   @Get("/week-plan")
   async getWeekPlan(
     @QueryParam("startDate") startDate: string,
@@ -34,6 +67,28 @@ export class ShoppingController {
     );
   }
 
+  /**
+   * @swagger
+   * /api/week-plan:
+   *   post:
+   *     tags: [Plan Semanal]
+   *     summary: Añadir entrada al plan semanal
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             $ref: '#/components/schemas/CreateWeekPlan'
+   *     responses:
+   *       201:
+   *         description: Entrada creada
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/WeekPlan'
+   *       400:
+   *         description: recipeId o ingredientId requerido, o plannedDate faltante
+   */
   @Post("/week-plan")
   @HttpCode(201)
   async addToWeekPlan(
@@ -87,6 +142,36 @@ export class ShoppingController {
     );
   }
 
+  /**
+   * @swagger
+   * /api/week-plan/{id}:
+   *   put:
+   *     tags: [Plan Semanal]
+   *     summary: Actualizar fecha de una entrada del plan
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: integer
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [plannedDate]
+   *             properties:
+   *               plannedDate:
+   *                 type: string
+   *                 format: date
+   *                 example: "2026-04-15"
+   *     responses:
+   *       200:
+   *         description: Fecha actualizada
+   *       404:
+   *         description: Plan no encontrado
+   */
   @Put("/week-plan/:id")
   async updatePlanDate(
     @Param("id") id: number,
@@ -112,6 +197,24 @@ export class ShoppingController {
     return plan;
   }
 
+  /**
+   * @swagger
+   * /api/week-plan/{id}:
+   *   delete:
+   *     tags: [Plan Semanal]
+   *     summary: Eliminar entrada del plan semanal
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: integer
+   *     responses:
+   *       204:
+   *         description: Entrada eliminada
+   *       404:
+   *         description: Plan no encontrado
+   */
   @Delete("/week-plan/:id")
   @HttpCode(204)
   async removeFromWeekPlan(@Param("id") id: number, @Req() req: AuthRequest) {
@@ -124,6 +227,37 @@ export class ShoppingController {
     return null;
   }
 
+  /**
+   * @swagger
+   * /api/week-plan/{id}/cook:
+   *   post:
+   *     tags: [Plan Semanal]
+   *     summary: Marcar entrada como cocinada
+   *     description: Marca la receta/ingrediente como cocinado y opcionalmente guarda sobras en el almacenamiento
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: integer
+   *     requestBody:
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               leftoverServings:
+   *                 type: number
+   *                 example: 2
+   *                 description: Raciones sobrantes a guardar
+   *               leftoverLocation:
+   *                 type: string
+   *                 enum: [nevera, congelador, despensa]
+   *                 example: nevera
+   *     responses:
+   *       200:
+   *         description: Marcado como cocinado
+   */
   @Post("/week-plan/:id/cook")
   async markAsCooked(
     @Param("id") id: number,
@@ -141,11 +275,58 @@ export class ShoppingController {
     );
   }
 
+  /**
+   * @swagger
+   * /api/week-plan/{id}/consume:
+   *   post:
+   *     tags: [Plan Semanal]
+   *     summary: Marcar entrada como consumida
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: integer
+   *     responses:
+   *       200:
+   *         description: Marcado como consumido
+   */
   @Post("/week-plan/:id/consume")
   async markAsConsumed(@Param("id") id: number, @Req() req: AuthRequest) {
     return shoppingService.markAsConsumed(id, req.userId!);
   }
 
+  /**
+   * @swagger
+   * /api/shopping-list:
+   *   get:
+   *     tags: [Lista de Compra]
+   *     summary: Obtener lista de la compra generada del plan semanal
+   *     parameters:
+   *       - in: query
+   *         name: startDate
+   *         required: true
+   *         schema:
+   *           type: string
+   *           format: date
+   *       - in: query
+   *         name: endDate
+   *         required: true
+   *         schema:
+   *           type: string
+   *           format: date
+   *     responses:
+   *       200:
+   *         description: Lista de la compra calculada
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 $ref: '#/components/schemas/ShoppingItem'
+   *       400:
+   *         description: Fechas requeridas
+   */
   @Get("/shopping-list")
   async getShoppingList(
     @QueryParam("startDate") startDate: string,
@@ -163,6 +344,41 @@ export class ShoppingController {
     );
   }
 
+  /**
+   * @swagger
+   * /api/shopping-list/add:
+   *   post:
+   *     tags: [Lista de Compra]
+   *     summary: Añadir items manualmente a la lista de la compra
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [items]
+   *             properties:
+   *               items:
+   *                 type: array
+   *                 items:
+   *                   type: object
+   *                   required: [ingredientId, quantity, unit]
+   *                   properties:
+   *                     ingredientId:
+   *                       type: integer
+   *                       example: 1
+   *                     quantity:
+   *                       type: number
+   *                       example: 500
+   *                     unit:
+   *                       type: string
+   *                       example: g
+   *     responses:
+   *       201:
+   *         description: Items añadidos
+   *       400:
+   *         description: items requerido y no vacío
+   */
   @Post("/shopping-list/add")
   @HttpCode(201)
   async addToShoppingList(
@@ -182,6 +398,54 @@ export class ShoppingController {
     return shoppingService.addManualItems(body.items, req.userId!);
   }
 
+  /**
+   * @swagger
+   * /api/shopping-list/mark-purchased:
+   *   post:
+   *     tags: [Lista de Compra]
+   *     summary: Marcar items como comprados y moverlos al almacenamiento
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [items]
+   *             properties:
+   *               items:
+   *                 type: array
+   *                 items:
+   *                   type: object
+   *                   required: [ingredientId, quantity, unit]
+   *                   properties:
+   *                     ingredientId:
+   *                       type: integer
+   *                     quantity:
+   *                       type: number
+   *                     unit:
+   *                       type: string
+   *     responses:
+   *       200:
+   *         description: Resultado de cada item procesado
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 results:
+   *                   type: array
+   *                   items:
+   *                     type: object
+   *                     properties:
+   *                       ingredientId:
+   *                         type: integer
+   *                       success:
+   *                         type: boolean
+   *                       homeItemId:
+   *                         type: integer
+   *                       error:
+   *                         type: string
+   */
   @Post("/shopping-list/mark-purchased")
   async markPurchased(
     @Body()

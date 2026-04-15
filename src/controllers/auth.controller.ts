@@ -153,6 +153,41 @@ export class AuthController {
     return user;
   }
 
+  /**
+   * @swagger
+   * /api/auth/account:
+   *   put:
+   *     tags: [Auth]
+   *     summary: Actualizar datos de la cuenta
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               name:
+   *                 type: string
+   *                 example: Juan García
+   *               email:
+   *                 type: string
+   *                 format: email
+   *                 example: nuevo@ejemplo.com
+   *               imageUrl:
+   *                 type: string
+   *                 example: https://ejemplo.com/avatar.jpg
+   *     responses:
+   *       200:
+   *         description: Cuenta actualizada
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/User'
+   *       400:
+   *         description: Error de validación
+   *       401:
+   *         description: No autenticado
+   */
   @Put("/account")
   @UseBefore(authMiddleware)
   async updateAccount(
@@ -170,6 +205,34 @@ export class AuthController {
     }
   }
 
+  /**
+   * @swagger
+   * /api/auth/change-password:
+   *   post:
+   *     tags: [Auth]
+   *     summary: Cambiar contraseña
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [currentPassword, newPassword]
+   *             properties:
+   *               currentPassword:
+   *                 type: string
+   *                 example: "123456"
+   *               newPassword:
+   *                 type: string
+   *                 example: "nuevaPass123"
+   *     responses:
+   *       200:
+   *         description: Contraseña cambiada correctamente
+   *       400:
+   *         description: Contraseña actual incorrecta o nueva contraseña demasiado corta
+   *       401:
+   *         description: No autenticado
+   */
   @Post("/change-password")
   @UseBefore(authMiddleware)
   async changePassword(
