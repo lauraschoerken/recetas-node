@@ -97,6 +97,21 @@ export class HouseholdController {
     }
   }
 
+  @Delete("/:id/invites/:inviteId")
+  @HttpCode(204)
+  async cancelInvite(
+    @Param("id") id: number,
+    @Param("inviteId") inviteId: number,
+    @Req() req: AuthRequest,
+  ) {
+    try {
+      await householdService.cancelInvite(id, inviteId, req.userId!);
+      return null;
+    } catch (e: any) {
+      throw { httpCode: 403, message: e.message };
+    }
+  }
+
   @Delete("/:id/members/:userId")
   @HttpCode(204)
   async removeMember(

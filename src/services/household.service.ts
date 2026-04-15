@@ -122,6 +122,17 @@ export const householdService = {
         throw new Error("Este usuario ya es miembro del hogar");
     }
 
+    const pendingInvite = await prisma.householdInvite.findFirst({
+      where: {
+        email: dto.email,
+        householdId,
+        accepted: false,
+        expiresAt: { gt: new Date() },
+      },
+    });
+    if (pendingInvite)
+      throw new Error("Ya existe una invitación pendiente para este email");
+
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + INVITE_EXPIRY_DAYS);
 
@@ -266,6 +277,27 @@ export const householdService = {
       where: { id: userId },
       data: { planningAlertScope: scope },
     });
+  },
+
+  async cancelInvite(
+    householdId: number,
+    inviteId: number,
+    requesterId: number,
+  ) {
+    const requester = await prisma.householdMember.findFirst({
+      where: { userId: requesterId, householdId },
+    });
+    if (!requester) throw new Error("No eres miembro de este hogar");
+    if (requester.role !== "ADMIN")
+      throw new Error("Solo el administrador puede cancelar invitaciones");
+
+    const invite = await prisma.householdInvite.findFirst({
+      where: { id: inviteId, householdId },
+    });
+    if (!invite) throw new Error("Invitación no encontrada");
+
+    await prisma.householdInvite.delete({ where: { id: inviteId } });
+    return { success: true };
   },
 
   async assertMember(userId: number, householdId: number) {
