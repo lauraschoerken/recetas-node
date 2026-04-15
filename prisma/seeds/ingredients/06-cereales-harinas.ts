@@ -1,0 +1,322 @@
+/**
+ * CEREALES Y HARINAS — ~28 ingredientes
+ * Macros por 100 g en seco (salvo pan, que ya está listo para consumo).
+ * Las variantes "Cocido/a" incluyen macros por 100 g cocinado y weightFactor.
+ * Fuente: USDA FoodData Central 2024-2025.
+ */
+import { IngredientSeedData } from '../types';
+
+export const cerealesHarinas: IngredientSeedData[] = [
+  // ── ARROCES ────────────────────────────────────────────────────────────
+  {
+    name: 'Arroz blanco',
+    unit: 'g',
+    defaultLocation: 'despensa',
+    variants: [
+      { name: 'Crudo',  isDefault: true,  calories: 365, protein: 7.13, carbs: 79.34, fat: 0.66, fiber: 1.3 },
+      { name: 'Cocido', isDefault: false, calories: 130, protein: 2.69, carbs: 28.17, fat: 0.28, fiber: 0.4, weightFactor: 2.5 },
+    ],
+    conversions: [
+      { unitName: 'kg', gramsPerUnit: 1000 },
+      { unitName: 'taza', gramsPerUnit: 185 },
+      { unitName: 'puñado', gramsPerUnit: 60 },
+    ],
+  },
+  {
+    name: 'Arroz integral',
+    unit: 'g',
+    defaultLocation: 'despensa',
+    variants: [
+      { name: 'Crudo',  isDefault: true,  calories: 367, protein: 7.94, carbs: 76.17, fat: 2.92, fiber: 3.5 },
+      { name: 'Cocido', isDefault: false, calories: 123, protein: 2.74, carbs: 25.58, fat: 0.97, fiber: 1.8, weightFactor: 2.5 },
+    ],
+    conversions: [
+      { unitName: 'kg', gramsPerUnit: 1000 },
+      { unitName: 'taza', gramsPerUnit: 195 },
+    ],
+  },
+  {
+    name: 'Arroz basmati',
+    unit: 'g',
+    defaultLocation: 'despensa',
+    variants: [
+      { name: 'Crudo',  isDefault: true,  calories: 349, protein: 7.5, carbs: 77.5, fat: 0.5, fiber: 0.7 },
+      { name: 'Cocido', isDefault: false, calories: 121, protein: 2.7, carbs: 26.0, fat: 0.3, fiber: 0.4, weightFactor: 2.5 },
+    ],
+    conversions: [
+      { unitName: 'kg', gramsPerUnit: 1000 },
+    ],
+  },
+  {
+    name: 'Arroz salvaje',
+    unit: 'g',
+    defaultLocation: 'despensa',
+    variants: [
+      { name: 'Crudo',  isDefault: true,  calories: 357, protein: 14.73, carbs: 74.9, fat: 1.08, fiber: 6.2 },
+      { name: 'Cocido', isDefault: false, calories: 101, protein: 3.99, carbs: 21.34, fat: 0.34, fiber: 1.8, weightFactor: 3.0 },
+    ],
+    conversions: [
+      { unitName: 'kg', gramsPerUnit: 1000 },
+    ],
+  },
+  // ── PASTAS ─────────────────────────────────────────────────────────────
+  {
+    name: 'Espaguetis',
+    unit: 'g',
+    defaultLocation: 'despensa',
+    variants: [
+      { name: 'Secos',   isDefault: true,  calories: 371, protein: 13.04, carbs: 74.67, fat: 1.51, fiber: 3.2 },
+      { name: 'Cocidos', isDefault: false, calories: 158, protein: 5.8,  carbs: 30.86, fat: 0.93, fiber: 1.8, weightFactor: 2.2 },
+    ],
+    conversions: [
+      { unitName: 'kg', gramsPerUnit: 1000 },
+    ],
+  },
+  {
+    name: 'Macarrones',
+    unit: 'g',
+    defaultLocation: 'despensa',
+    variants: [
+      { name: 'Secos',   isDefault: true,  calories: 371, protein: 13.04, carbs: 74.67, fat: 1.51, fiber: 3.2 },
+      { name: 'Cocidos', isDefault: false, calories: 158, protein: 5.8,  carbs: 30.86, fat: 0.93, fiber: 1.8, weightFactor: 2.2 },
+    ],
+    conversions: [
+      { unitName: 'kg', gramsPerUnit: 1000 },
+    ],
+  },
+  {
+    name: 'Pasta integral',
+    unit: 'g',
+    defaultLocation: 'despensa',
+    variants: [
+      { name: 'Seca',    isDefault: true,  calories: 348, protein: 14.0, carbs: 70.3, fat: 1.4, fiber: 8.0 },
+      { name: 'Cocida',  isDefault: false, calories: 142, protein: 5.3,  carbs: 28.1, fat: 0.7, fiber: 3.9, weightFactor: 2.2 },
+    ],
+    conversions: [
+      { unitName: 'kg', gramsPerUnit: 1000 },
+    ],
+  },
+  {
+    name: 'Fideos',
+    unit: 'g',
+    defaultLocation: 'despensa',
+    variants: [
+      { name: 'Secos',   isDefault: true,  calories: 368, protein: 13.27, carbs: 73.22, fat: 1.75, fiber: 2.8 },
+      { name: 'Cocidos', isDefault: false, calories: 155, protein: 5.3,  carbs: 30.7, fat: 0.7, fiber: 1.4, weightFactor: 2.0 },
+    ],
+    conversions: [
+      { unitName: 'kg', gramsPerUnit: 1000 },
+    ],
+  },
+  {
+    name: 'Pasta fresca',
+    unit: 'g',
+    defaultLocation: 'nevera',
+    variants: [
+      { name: 'Crudo',   isDefault: true,  calories: 260, protein: 9.5, carbs: 46.0, fat: 3.5, fiber: 1.8 },
+      { name: 'Cocida',  isDefault: false, calories: 143, protein: 5.1, carbs: 25.0, fat: 1.8, fiber: 1.0, weightFactor: 1.5 },
+    ],
+    conversions: [
+      { unitName: 'kg', gramsPerUnit: 1000 },
+    ],
+  },
+  {
+    name: 'Lasaña (láminas)',
+    unit: 'g',
+    defaultLocation: 'despensa',
+    variants: [
+      { name: 'Seca', isDefault: true,  calories: 371, protein: 13.04, carbs: 74.67, fat: 1.51, fiber: 3.2 },
+    ],
+    conversions: [
+      { unitName: 'kg', gramsPerUnit: 1000 },
+      { unitName: 'lámina', gramsPerUnit: 25 },
+    ],
+  },
+  // ── HARINAS ────────────────────────────────────────────────────────────
+  {
+    name: 'Harina de trigo',
+    unit: 'g',
+    defaultLocation: 'despensa',
+    variants: [
+      { name: 'Blanca (todo uso)', isDefault: true,  calories: 364, protein: 10.33, carbs: 76.31, fat: 0.98, fiber: 2.7 },
+    ],
+    conversions: [
+      { unitName: 'kg', gramsPerUnit: 1000 },
+      { unitName: 'taza', gramsPerUnit: 120 },
+      { unitName: 'cucharada', gramsPerUnit: 10 },
+    ],
+  },
+  {
+    name: 'Harina integral',
+    unit: 'g',
+    defaultLocation: 'despensa',
+    variants: [
+      { name: 'Integral de trigo', isDefault: true, calories: 340, protein: 13.21, carbs: 72.57, fat: 1.87, fiber: 10.7 },
+    ],
+    conversions: [
+      { unitName: 'kg', gramsPerUnit: 1000 },
+      { unitName: 'taza', gramsPerUnit: 120 },
+    ],
+  },
+  {
+    name: 'Harina de maíz',
+    unit: 'g',
+    defaultLocation: 'despensa',
+    variants: [
+      { name: 'Fina (Maizena)', isDefault: true, calories: 381, protein: 0.26, carbs: 91.27, fat: 0.05, fiber: 0.9 },
+    ],
+    conversions: [
+      { unitName: 'kg', gramsPerUnit: 1000 },
+      { unitName: 'cucharada', gramsPerUnit: 10 },
+    ],
+  },
+  {
+    name: 'Harina de avena',
+    unit: 'g',
+    defaultLocation: 'despensa',
+    variants: [
+      { name: 'Molida', isDefault: true, calories: 389, protein: 16.89, carbs: 66.27, fat: 6.9, fiber: 10.6 },
+    ],
+    conversions: [
+      { unitName: 'kg', gramsPerUnit: 1000 },
+    ],
+  },
+  {
+    name: 'Harina de almendra',
+    unit: 'g',
+    defaultLocation: 'despensa',
+    variants: [
+      { name: 'Blanqueada', isDefault: true, calories: 576, protein: 21.94, carbs: 19.74, fat: 50.6, fiber: 12.5 },
+    ],
+    conversions: [
+      { unitName: 'kg', gramsPerUnit: 1000 },
+      { unitName: 'taza', gramsPerUnit: 100 },
+    ],
+  },
+  // ── CEREALES VARIOS ────────────────────────────────────────────────────
+  {
+    name: 'Copos de avena',
+    unit: 'g',
+    defaultLocation: 'despensa',
+    variants: [
+      { name: 'Crudo', isDefault: true,  calories: 389, protein: 16.89, carbs: 66.27, fat: 6.9,  fiber: 10.6 },
+      { name: 'Cocidos (porridge)', isDefault: false, calories: 71, protein: 2.5, carbs: 12.0, fat: 1.4, fiber: 1.7, weightFactor: 2.0 },
+    ],
+    conversions: [
+      { unitName: 'kg', gramsPerUnit: 1000 },
+      { unitName: 'taza', gramsPerUnit: 90 },
+    ],
+  },
+  {
+    name: 'Cuscús',
+    unit: 'g',
+    defaultLocation: 'despensa',
+    variants: [
+      { name: 'Seco',   isDefault: true,  calories: 376, protein: 12.76, carbs: 77.43, fat: 0.64, fiber: 5.0 },
+      { name: 'Cocido', isDefault: false, calories: 112, protein: 3.79,  carbs: 23.22, fat: 0.16, fiber: 1.4, weightFactor: 2.5 },
+    ],
+    conversions: [
+      { unitName: 'kg', gramsPerUnit: 1000 },
+    ],
+  },
+  {
+    name: 'Quinoa',
+    unit: 'g',
+    defaultLocation: 'despensa',
+    variants: [
+      { name: 'Seca',   isDefault: true,  calories: 368, protein: 14.12, carbs: 64.16, fat: 6.07, fiber: 7.0 },
+      { name: 'Cocida', isDefault: false, calories: 120, protein: 4.4,  carbs: 21.3,  fat: 1.92, fiber: 2.8, weightFactor: 2.8 },
+    ],
+    conversions: [
+      { unitName: 'kg', gramsPerUnit: 1000 },
+      { unitName: 'taza', gramsPerUnit: 170 },
+    ],
+  },
+  {
+    name: 'Bulgur',
+    unit: 'g',
+    defaultLocation: 'despensa',
+    variants: [
+      { name: 'Seco',   isDefault: true,  calories: 342, protein: 12.29, carbs: 75.87, fat: 1.33, fiber: 18.3 },
+      { name: 'Cocido', isDefault: false, calories: 83,  protein: 3.08,  carbs: 18.58, fat: 0.24, fiber: 4.5, weightFactor: 2.5 },
+    ],
+    conversions: [
+      { unitName: 'kg', gramsPerUnit: 1000 },
+    ],
+  },
+  {
+    name: 'Mijo',
+    unit: 'g',
+    defaultLocation: 'despensa',
+    variants: [
+      { name: 'Crudo',  isDefault: true,  calories: 378, protein: 11.02, carbs: 72.85, fat: 4.22, fiber: 8.5 },
+      { name: 'Cocido', isDefault: false, calories: 119, protein: 3.51,  carbs: 23.67, fat: 1.0,  fiber: 1.3, weightFactor: 2.5 },
+    ],
+    conversions: [
+      { unitName: 'kg', gramsPerUnit: 1000 },
+    ],
+  },
+  {
+    name: 'Trigo sarraceno',
+    unit: 'g',
+    defaultLocation: 'despensa',
+    variants: [
+      { name: 'Crudo',  isDefault: true,  calories: 343, protein: 13.25, carbs: 71.5, fat: 3.4, fiber: 10.0 },
+      { name: 'Cocido', isDefault: false, calories: 92,  protein: 3.38,  carbs: 19.9, fat: 0.62, fiber: 2.7, weightFactor: 2.5 },
+    ],
+    conversions: [
+      { unitName: 'kg', gramsPerUnit: 1000 },
+    ],
+  },
+  // ── PAN Y SIMILARES ────────────────────────────────────────────────────
+  {
+    name: 'Pan blanco',
+    unit: 'g',
+    defaultLocation: 'despensa',
+    preferredUnit: 'rebanada',
+    variants: [
+      { name: 'Tierno', isDefault: true, calories: 265, protein: 8.85, carbs: 49.0, fat: 3.2, fiber: 2.7 },
+    ],
+    conversions: [
+      { unitName: 'kg', gramsPerUnit: 1000 },
+      { unitName: 'rebanada', gramsPerUnit: 30 },
+    ],
+  },
+  {
+    name: 'Pan integral',
+    unit: 'g',
+    defaultLocation: 'despensa',
+    preferredUnit: 'rebanada',
+    variants: [
+      { name: 'De trigo integral', isDefault: true, calories: 247, protein: 12.98, carbs: 41.43, fat: 3.44, fiber: 6.0 },
+    ],
+    conversions: [
+      { unitName: 'kg', gramsPerUnit: 1000 },
+      { unitName: 'rebanada', gramsPerUnit: 30 },
+    ],
+  },
+  {
+    name: 'Pan rallado',
+    unit: 'g',
+    defaultLocation: 'despensa',
+    variants: [
+      { name: 'Fino', isDefault: true, calories: 395, protein: 13.35, carbs: 75.6, fat: 5.7, fiber: 4.2 },
+    ],
+    conversions: [
+      { unitName: 'kg', gramsPerUnit: 1000 },
+      { unitName: 'cucharada', gramsPerUnit: 10 },
+    ],
+  },
+  {
+    name: 'Baguette',
+    unit: 'g',
+    defaultLocation: 'despensa',
+    variants: [
+      { name: 'Blanca', isDefault: true, calories: 272, protein: 9.3, carbs: 52.0, fat: 3.0, fiber: 2.3 },
+    ],
+    conversions: [
+      { unitName: 'kg', gramsPerUnit: 1000 },
+      { unitName: 'unidad', gramsPerUnit: 250 },
+    ],
+  },
+];

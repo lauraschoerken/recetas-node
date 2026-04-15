@@ -14,7 +14,8 @@
     "test:db:setup": "cross-env DATABASE_URL=postgresql://postgres:1234@localhost:5432/recipes_db_test npx prisma db push --force-reset --accept-data-loss",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "seed:ingredients": "ts-node prisma/seeds/run-ingredients.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.10.0",
