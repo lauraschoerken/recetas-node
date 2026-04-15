@@ -14,8 +14,8 @@
  * primera letra en mayúscula, resto en minúsculas.
  */
 
-import { PrismaClient, Prisma } from '@prisma/client';
-import { allIngredients } from './ingredients';
+import { PrismaClient, Prisma } from "@prisma/client";
+import { allIngredients } from "./ingredients";
 
 const prisma = new PrismaClient();
 
@@ -25,7 +25,9 @@ function normalizeName(name: string): string {
 }
 
 async function main() {
-  console.log(`Iniciando seed de ingredientes (${allIngredients.length} ingredientes)...`);
+  console.log(
+    `Iniciando seed de ingredientes (${allIngredients.length} ingredientes)...`,
+  );
 
   let creados = 0;
   let actualizados = 0;
@@ -37,7 +39,7 @@ async function main() {
 
     // ── 1. Upsert del ingrediente ─────────────────────────────────────────
     const existing = await prisma.ingredient.findFirst({
-      where: { name: { equals: name, mode: 'insensitive' } },
+      where: { name: { equals: name, mode: "insensitive" } },
     });
 
     let ingredient: { id: number };
@@ -47,8 +49,12 @@ async function main() {
         where: { id: existing.id },
         data: {
           unit: data.unit,
-          ...(data.preferredUnit !== undefined && { preferredUnit: data.preferredUnit }),
-          ...(data.defaultLocation !== undefined && { defaultLocation: data.defaultLocation }),
+          ...(data.preferredUnit !== undefined && {
+            preferredUnit: data.preferredUnit,
+          }),
+          ...(data.defaultLocation !== undefined && {
+            defaultLocation: data.defaultLocation,
+          }),
         },
       });
       actualizados++;
@@ -72,9 +78,16 @@ async function main() {
         where: {
           ingredientId: ingredient.id,
           OR: [
-            { name: { equals: variant.name, mode: 'insensitive' } },
-            ...(variant.name.toLowerCase() === 'crudo'
-              ? [{ name: { startsWith: 'crud', mode: Prisma.QueryMode.insensitive } }]
+            { name: { equals: variant.name, mode: "insensitive" } },
+            ...(variant.name.toLowerCase() === "crudo"
+              ? [
+                  {
+                    name: {
+                      startsWith: "crud",
+                      mode: Prisma.QueryMode.insensitive,
+                    },
+                  },
+                ]
               : []),
           ],
         },
@@ -124,12 +137,12 @@ async function main() {
     }
   }
 
-  console.log('────────────────────────────────────────────');
+  console.log("────────────────────────────────────────────");
   console.log(`✅ Ingredientes creados:      ${creados}`);
   console.log(`📝 Ingredientes actualizados: ${actualizados}`);
   console.log(`🔬 Variantes procesadas:      ${variantesUpserted}`);
   console.log(`⚖️  Conversiones procesadas:   ${conversionesUpserted}`);
-  console.log('────────────────────────────────────────────');
+  console.log("────────────────────────────────────────────");
 }
 
 main()

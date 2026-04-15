@@ -38,11 +38,11 @@ export interface IngredientSeedData {
   /** Nombre en español, primera letra mayúscula */
   name: string;
   /** Unidad base: "g" para sólidos, "ml" para líquidos */
-  unit: 'g' | 'ml';
+  unit: "g" | "ml";
   /** Unidad preferida para mostrar en la lista de la compra */
   preferredUnit?: string;
   /** Lugar de almacenamiento habitual */
-  defaultLocation?: 'nevera' | 'congelador' | 'despensa' | null;
+  defaultLocation?: "nevera" | "congelador" | "despensa" | null;
   /** Al menos una variante (normalmente "Crudo" como default) */
   variants: IngredientSeedVariant[];
   /** Conversiones de unidad (siempre incluir "kg" o "l" según corresponda) */
