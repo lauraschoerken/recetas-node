@@ -49,14 +49,15 @@ export const alertService = {
     userId: number,
   ) {
     const scope = await this.getAlertScope(userId);
-    const where = scope.useSharedAlerts && scope.householdId
-      ? {
-          ingredientId_householdId: {
-            ingredientId: dto.ingredientId,
-            householdId: scope.householdId,
-          },
-        }
-      : { ingredientId_userId: { ingredientId: dto.ingredientId, userId } };
+    const where =
+      scope.useSharedAlerts && scope.householdId
+        ? {
+            ingredientId_householdId: {
+              ingredientId: dto.ingredientId,
+              householdId: scope.householdId,
+            },
+          }
+        : { ingredientId_userId: { ingredientId: dto.ingredientId, userId } };
 
     const result = await prisma.ingredientMinThreshold.upsert({
       where: where as any,
@@ -120,14 +121,15 @@ export const alertService = {
 
   async setRecipeThreshold(dto: CreateRecipeThresholdDto, userId: number) {
     const scope = await this.getAlertScope(userId);
-    const where = scope.useSharedAlerts && scope.householdId
-      ? {
-          recipeId_householdId: {
-            recipeId: dto.recipeId,
-            householdId: scope.householdId,
-          },
-        }
-      : { recipeId_userId: { recipeId: dto.recipeId, userId } };
+    const where =
+      scope.useSharedAlerts && scope.householdId
+        ? {
+            recipeId_householdId: {
+              recipeId: dto.recipeId,
+              householdId: scope.householdId,
+            },
+          }
+        : { recipeId_userId: { recipeId: dto.recipeId, userId } };
 
     return prisma.recipeMinThreshold.upsert({
       where: where as any,

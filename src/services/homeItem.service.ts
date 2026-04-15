@@ -74,9 +74,10 @@ export class HomeItemService {
 
   async getAll(userId: number): Promise<HomeItemWithPlanned[]> {
     const ctx = await this.getHomeContext(userId);
-    const whereClause = ctx.useShared && ctx.householdId
-      ? { householdId: ctx.householdId }
-      : { userId };
+    const whereClause =
+      ctx.useShared && ctx.householdId
+        ? { householdId: ctx.householdId }
+        : { userId };
 
     const items = await prisma.homeItem.findMany({
       where: whereClause,
@@ -203,9 +204,10 @@ export class HomeItemService {
     location: HomeLocation,
   ): Promise<HomeItemWithPlanned[]> {
     const ctx = await this.getHomeContext(userId);
-    const baseWhere = ctx.useShared && ctx.householdId
-      ? { householdId: ctx.householdId }
-      : { userId };
+    const baseWhere =
+      ctx.useShared && ctx.householdId
+        ? { householdId: ctx.householdId }
+        : { userId };
 
     // Necesitamos TODOS los items para calcular el consumo correctamente
     const allItems = await prisma.homeItem.findMany({
@@ -652,9 +654,10 @@ export class HomeItemService {
     data: UpdateHomeItemDto,
   ): Promise<HomeItem | null> {
     const ctx = await this.getHomeContext(userId);
-    const ownerFilter = ctx.useShared && ctx.householdId
-      ? { householdId: ctx.householdId }
-      : { userId };
+    const ownerFilter =
+      ctx.useShared && ctx.householdId
+        ? { householdId: ctx.householdId }
+        : { userId };
 
     const item = await prisma.homeItem.findFirst({
       where: { id, ...ownerFilter },
@@ -681,9 +684,10 @@ export class HomeItemService {
 
   async delete(id: number, userId: number): Promise<boolean> {
     const ctx = await this.getHomeContext(userId);
-    const ownerFilter = ctx.useShared && ctx.householdId
-      ? { householdId: ctx.householdId }
-      : { userId };
+    const ownerFilter =
+      ctx.useShared && ctx.householdId
+        ? { householdId: ctx.householdId }
+        : { userId };
 
     const item = await prisma.homeItem.findFirst({
       where: { id, ...ownerFilter },
@@ -701,9 +705,10 @@ export class HomeItemService {
     servings: number,
   ): Promise<void> {
     const ctx = await this.getHomeContext(userId);
-    const whereBase = ctx.useShared && ctx.householdId
-      ? { householdId: ctx.householdId }
-      : { userId };
+    const whereBase =
+      ctx.useShared && ctx.householdId
+        ? { householdId: ctx.householdId }
+        : { userId };
 
     const homeItems = await prisma.homeItem.findMany({
       where: { ...whereBase, recipeId },
@@ -772,9 +777,10 @@ export class HomeItemService {
     data: CookIngredientDto,
   ): Promise<{ success: boolean; cookedItem: HomeItem; message: string }> {
     const ctx = await this.getHomeContext(userId);
-    const ownerFilter = ctx.useShared && ctx.householdId
-      ? { householdId: ctx.householdId }
-      : { userId };
+    const ownerFilter =
+      ctx.useShared && ctx.householdId
+        ? { householdId: ctx.householdId }
+        : { userId };
 
     const item = await prisma.homeItem.findFirst({
       where: { id, ...ownerFilter },
@@ -955,9 +961,10 @@ export class HomeItemService {
 
   async getHistory(homeItemId: number, userId: number) {
     const ctx = await this.getHomeContext(userId);
-    const ownerFilter = ctx.useShared && ctx.householdId
-      ? { householdId: ctx.householdId }
-      : { userId };
+    const ownerFilter =
+      ctx.useShared && ctx.householdId
+        ? { householdId: ctx.householdId }
+        : { userId };
 
     const item = await prisma.homeItem.findFirst({
       where: { id: homeItemId, ...ownerFilter },

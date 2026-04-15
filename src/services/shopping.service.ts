@@ -701,10 +701,13 @@ export class ShoppingService {
     endDate: Date,
   ): Promise<ShoppingItem[]> {
     const sharing = await this.getSharingContext(userId);
-    const planUserIds = sharing.shareShopping ? sharing.memberUserIds : [userId];
-    const homeWhere = sharing.shareHome && sharing.householdId
-      ? { householdId: sharing.householdId, ingredientId: { not: null } }
-      : { userId, ingredientId: { not: null } };
+    const planUserIds = sharing.shareShopping
+      ? sharing.memberUserIds
+      : [userId];
+    const homeWhere =
+      sharing.shareHome && sharing.householdId
+        ? { householdId: sharing.householdId, ingredientId: { not: null } }
+        : { userId, ingredientId: { not: null } };
 
     // Los ingredientes se necesitan para los PREP pendientes (preparaciones que hay que cocinar)
     // Los MEAL consumen recetas ya preparadas del inventario, no ingredientes directamente
