@@ -497,8 +497,8 @@ export class RecipeService {
     baseUnit: string,
     conversions: any[],
   ): number {
-    const u = usedUnit.toLowerCase();
-    const base = baseUnit.toLowerCase();
+    const u = usedUnit.toLowerCase().trim();
+    const base = baseUnit.toLowerCase().trim();
 
     if (u === base || u === "g" || u === "ml") {
       return quantity;
@@ -509,12 +509,31 @@ export class RecipeService {
     }
 
     if (conversions && conversions.length > 0) {
-      const conversion = conversions.find(
+      // Coincidencia exacta
+      const exact = conversions.find(
         (c: any) => c.unitName.toLowerCase() === u,
       );
-      if (conversion) {
-        return quantity * conversion.gramsPerUnit;
+      if (exact) return quantity * exact.gramsPerUnit;
+
+      // Normalizar plural→singular: "unidades"→"unidad", "cucharadas"→"cucharada"
+      const singular = u.endsWith("es")
+        ? u.slice(0, -2)
+        : u.endsWith("s")
+          ? u.slice(0, -1)
+          : null;
+      if (singular) {
+        const fuzzy = conversions.find(
+          (c: any) => c.unitName.toLowerCase() === singular,
+        );
+        if (fuzzy) return quantity * fuzzy.gramsPerUnit;
       }
+
+      // Normalizar singular→plural
+      const plural = u + "s";
+      const fuzzy2 = conversions.find(
+        (c: any) => c.unitName.toLowerCase() === plural,
+      );
+      if (fuzzy2) return quantity * fuzzy2.gramsPerUnit;
     }
 
     return quantity;
@@ -592,10 +611,18 @@ export class RecipeService {
         ing.unit,
         ing.conversions || [],
       );
-      const factor = (gramsUsed / 100) * ratio;
 
-      // Usar cookedVariant si existe, sino variant
-      const nutritionVariant = ri.cookedVariant || ri.variant;
+      // Aplicar weightFactor: convertir gramos según el cambio de estado (crudo → cocinado)
+      const originalVariant =
+        ri.variant ||
+        (ing.variants || []).find((v: any) => v.isDefault) ||
+        (ing.variants || [])[0];
+      const nutritionVariant = ri.cookedVariant || originalVariant;
+      const originalFactor: number = originalVariant?.weightFactor ?? 1;
+      const cookedFactor: number = nutritionVariant?.weightFactor ?? 1;
+      const convertedGrams = (gramsUsed / originalFactor) * cookedFactor;
+      const factor = (convertedGrams / 100) * ratio;
+
       const macros = this.getVariantMacros(ing, nutritionVariant);
       calories += macros.calories * factor;
       protein += macros.protein * factor;
@@ -638,11 +665,19 @@ export class RecipeService {
             ing.unit,
             ing.conversions || [],
           );
-          const factor = (gramsUsed / 100) * ratio;
 
-          // Usar cookedVariant si existe, sino variant
+          // Aplicar weightFactor igual que para ingredientes directos
+          const originalVariant =
+            defaultOption.variant ||
+            (ing.variants || []).find((v: any) => v.isDefault) ||
+            (ing.variants || [])[0];
           const nutritionVariant =
-            defaultOption.cookedVariant || defaultOption.variant;
+            defaultOption.cookedVariant || originalVariant;
+          const originalFactor: number = originalVariant?.weightFactor ?? 1;
+          const cookedFactor: number = nutritionVariant?.weightFactor ?? 1;
+          const convertedGrams = (gramsUsed / originalFactor) * cookedFactor;
+          const factor = (convertedGrams / 100) * ratio;
+
           const macros = this.getVariantMacros(ing, nutritionVariant);
           calories += macros.calories * factor;
           protein += macros.protein * factor;
@@ -713,6 +748,7 @@ export class RecipeService {
         name: ri.ingredient.name,
         quantity: ri.quantity,
         unit: ri.unit || ri.ingredient.unit,
+        ingredientBaseUnit: ri.ingredient.unit,
         variantId: ri.variantId,
         variantName: ri.variant?.name,
         cookedVariantId: ri.cookedVariantId,
