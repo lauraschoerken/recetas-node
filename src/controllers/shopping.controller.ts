@@ -204,6 +204,10 @@ export class ShoppingController {
           item.quantity,
           item.unit,
         );
+        await shoppingService.markShoppingItemPurchased(
+          item.ingredientId,
+          req.userId!,
+        );
         results.push({
           ingredientId: item.ingredientId,
           success: true,

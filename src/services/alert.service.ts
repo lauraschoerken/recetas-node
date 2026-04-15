@@ -9,12 +9,33 @@ import { householdService } from "./household.service";
 const prisma = new PrismaClient();
 
 export const alertService = {
+  async getAlertScope(userId: number): Promise<{
+    useSharedAlerts: boolean;
+    householdId: number | null;
+  }> {
+    const householdId = await householdService.getHouseholdId(userId);
+    if (!householdId) return { useSharedAlerts: false, householdId: null };
+
+    const household = await prisma.household.findUnique({
+      where: { id: householdId },
+      select: { shareAlerts: true },
+    });
+
+    return {
+      useSharedAlerts: !!household?.shareAlerts,
+      householdId,
+    };
+  },
+
   // ── Thresholds ──
 
   async getIngredientThresholds(userId: number) {
-    const householdId = await householdService.getHouseholdId(userId);
+    const scope = await this.getAlertScope(userId);
     return prisma.ingredientMinThreshold.findMany({
-      where: householdId ? { householdId } : { userId },
+      where:
+        scope.useSharedAlerts && scope.householdId
+          ? { householdId: scope.householdId }
+          : { userId },
       include: {
         ingredient: {
           select: { id: true, name: true, unit: true, preferredUnit: true },
@@ -27,12 +48,12 @@ export const alertService = {
     dto: CreateIngredientThresholdDto,
     userId: number,
   ) {
-    const householdId = await householdService.getHouseholdId(userId);
-    const where = householdId
+    const scope = await this.getAlertScope(userId);
+    const where = scope.useSharedAlerts && scope.householdId
       ? {
           ingredientId_householdId: {
             ingredientId: dto.ingredientId,
-            householdId,
+            householdId: scope.householdId,
           },
         }
       : { ingredientId_userId: { ingredientId: dto.ingredientId, userId } };
@@ -44,7 +65,9 @@ export const alertService = {
         ingredientId: dto.ingredientId,
         minQuantity: dto.minQuantity,
         unit: dto.unit,
-        ...(householdId ? { householdId } : { userId }),
+        ...(scope.useSharedAlerts && scope.householdId
+          ? { householdId: scope.householdId }
+          : { userId }),
       },
     });
 
@@ -52,7 +75,9 @@ export const alertService = {
     const homeItems = await prisma.homeItem.findMany({
       where: {
         ingredientId: dto.ingredientId,
-        ...(householdId ? { userId: undefined } : { userId }),
+        ...(scope.useSharedAlerts && scope.householdId
+          ? { householdId: scope.householdId }
+          : { userId }),
       },
     });
     const totalStock = homeItems.reduce((sum, item) => sum + item.quantity, 0);
@@ -70,25 +95,38 @@ export const alertService = {
   },
 
   async deleteIngredientThreshold(ingredientId: number, userId: number) {
-    const householdId = await householdService.getHouseholdId(userId);
+    const scope = await this.getAlertScope(userId);
     await prisma.ingredientMinThreshold.deleteMany({
-      where: { ingredientId, ...(householdId ? { householdId } : { userId }) },
+      where: {
+        ingredientId,
+        ...(scope.useSharedAlerts && scope.householdId
+          ? { householdId: scope.householdId }
+          : { userId }),
+      },
     });
     return { success: true };
   },
 
   async getRecipeThresholds(userId: number) {
-    const householdId = await householdService.getHouseholdId(userId);
+    const scope = await this.getAlertScope(userId);
     return prisma.recipeMinThreshold.findMany({
-      where: householdId ? { householdId } : { userId },
+      where:
+        scope.useSharedAlerts && scope.householdId
+          ? { householdId: scope.householdId }
+          : { userId },
       include: { recipe: { select: { id: true, title: true } } },
     });
   },
 
   async setRecipeThreshold(dto: CreateRecipeThresholdDto, userId: number) {
-    const householdId = await householdService.getHouseholdId(userId);
-    const where = householdId
-      ? { recipeId_householdId: { recipeId: dto.recipeId, householdId } }
+    const scope = await this.getAlertScope(userId);
+    const where = scope.useSharedAlerts && scope.householdId
+      ? {
+          recipeId_householdId: {
+            recipeId: dto.recipeId,
+            householdId: scope.householdId,
+          },
+        }
       : { recipeId_userId: { recipeId: dto.recipeId, userId } };
 
     return prisma.recipeMinThreshold.upsert({
@@ -97,15 +135,22 @@ export const alertService = {
       create: {
         recipeId: dto.recipeId,
         minServings: dto.minServings,
-        ...(householdId ? { householdId } : { userId }),
+        ...(scope.useSharedAlerts && scope.householdId
+          ? { householdId: scope.householdId }
+          : { userId }),
       },
     });
   },
 
   async deleteRecipeThreshold(recipeId: number, userId: number) {
-    const householdId = await householdService.getHouseholdId(userId);
+    const scope = await this.getAlertScope(userId);
     await prisma.recipeMinThreshold.deleteMany({
-      where: { recipeId, ...(householdId ? { householdId } : { userId }) },
+      where: {
+        recipeId,
+        ...(scope.useSharedAlerts && scope.householdId
+          ? { householdId: scope.householdId }
+          : { userId }),
+      },
     });
     return { success: true };
   },
@@ -113,7 +158,7 @@ export const alertService = {
   // ── Alerts ──
 
   async getAlerts(userId: number, includeResolved = false) {
-    const householdId = await householdService.getHouseholdId(userId);
+    const scope = await this.getAlertScope(userId);
     const statusFilter = includeResolved
       ? {}
       : { status: { in: ["OPEN", "VIEWED", "SNOOZED"] } };
@@ -124,7 +169,9 @@ export const alertService = {
 
     return prisma.stockAlert.findMany({
       where: {
-        ...(householdId ? { householdId } : { userId }),
+        ...(scope.useSharedAlerts && scope.householdId
+          ? { householdId: scope.householdId }
+          : { userId }),
         ...statusFilter,
         ...snoozedFilter,
       },
@@ -133,10 +180,12 @@ export const alertService = {
   },
 
   async getUnreadCount(userId: number) {
-    const householdId = await householdService.getHouseholdId(userId);
+    const scope = await this.getAlertScope(userId);
     return prisma.stockAlert.count({
       where: {
-        ...(householdId ? { householdId } : { userId }),
+        ...(scope.useSharedAlerts && scope.householdId
+          ? { householdId: scope.householdId }
+          : { userId }),
         status: "OPEN",
         OR: [{ snoozedUntil: null }, { snoozedUntil: { lte: new Date() } }],
       },
@@ -161,6 +210,9 @@ export const alertService = {
 
     if (dto.addToShopping && alert.ingredientId) {
       const householdId = await householdService.getHouseholdId(userId);
+      const household = householdId
+        ? await prisma.household.findUnique({ where: { id: householdId } })
+        : null;
       const deficit = alert.minimum - alert.afterQty;
       const quantity = Math.max(deficit, 1);
       const ingredient = await prisma.ingredient.findUnique({
@@ -173,7 +225,7 @@ export const alertService = {
             unit: ingredient.unit,
             userId,
             ingredientId: alert.ingredientId,
-            ...(householdId ? { householdId } : {}),
+            ...(household?.shareShopping && householdId ? { householdId } : {}),
           },
         });
       }
@@ -194,14 +246,16 @@ export const alertService = {
   }) {
     const { userId, ingredientId, recipeId, triggerType, beforeQty, afterQty } =
       params;
-    const householdId = await householdService.getHouseholdId(userId);
+    const scope = await this.getAlertScope(userId);
     const deltaQty = beforeQty - afterQty;
 
     if (ingredientId) {
       const threshold = await prisma.ingredientMinThreshold.findFirst({
         where: {
           ingredientId,
-          ...(householdId ? { householdId } : { userId }),
+          ...(scope.useSharedAlerts && scope.householdId
+            ? { householdId: scope.householdId }
+            : { userId }),
         },
       });
       if (threshold && afterQty < threshold.minQuantity) {
@@ -210,7 +264,9 @@ export const alertService = {
           where: {
             ingredientId,
             status: { in: ["OPEN", "VIEWED"] },
-            ...(householdId ? { householdId } : { userId }),
+            ...(scope.useSharedAlerts && scope.householdId
+              ? { householdId: scope.householdId }
+              : { userId }),
           },
         });
         if (!existingAlert) {
@@ -228,7 +284,9 @@ export const alertService = {
               message: `${ingredient?.name}: quedan ${afterQty} ${threshold.unit} (mínimo: ${threshold.minQuantity})`,
               userId,
               ingredientId,
-              ...(householdId ? { householdId } : {}),
+              ...(scope.useSharedAlerts && scope.householdId
+                ? { householdId: scope.householdId }
+                : {}),
             },
           });
         }
@@ -237,7 +295,12 @@ export const alertService = {
 
     if (recipeId) {
       const threshold = await prisma.recipeMinThreshold.findFirst({
-        where: { recipeId, ...(householdId ? { householdId } : { userId }) },
+        where: {
+          recipeId,
+          ...(scope.useSharedAlerts && scope.householdId
+            ? { householdId: scope.householdId }
+            : { userId }),
+        },
       });
       if (threshold && afterQty < threshold.minServings) {
         // Check for existing OPEN/VIEWED alert for this recipe to avoid duplicates
@@ -245,7 +308,9 @@ export const alertService = {
           where: {
             recipeId,
             status: { in: ["OPEN", "VIEWED"] },
-            ...(householdId ? { householdId } : { userId }),
+            ...(scope.useSharedAlerts && scope.householdId
+              ? { householdId: scope.householdId }
+              : { userId }),
           },
         });
         if (!existingAlert) {
@@ -263,7 +328,9 @@ export const alertService = {
               message: `${recipe?.title}: quedan ${afterQty} raciones (mínimo: ${threshold.minServings})`,
               userId,
               recipeId,
-              ...(householdId ? { householdId } : {}),
+              ...(scope.useSharedAlerts && scope.householdId
+                ? { householdId: scope.householdId }
+                : {}),
             },
           });
         }

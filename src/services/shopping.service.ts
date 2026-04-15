@@ -10,7 +10,12 @@ const prisma = new PrismaClient();
 
 export class ShoppingService {
   private weekPlanInclude = {
-    ingredient: true,
+    ingredient: {
+      include: {
+        conversions: true,
+        variants: true,
+      },
+    },
     recipe: {
       include: {
         ingredients: {
@@ -91,6 +96,44 @@ export class ShoppingService {
       },
     },
   };
+
+  private async getSharingContext(userId: number): Promise<{
+    householdId: number | null;
+    memberUserIds: number[];
+    shareHome: boolean;
+    shareShopping: boolean;
+  }> {
+    const member = await prisma.householdMember.findFirst({
+      where: { userId },
+      select: { householdId: true },
+    });
+
+    if (!member?.householdId) {
+      return {
+        householdId: null,
+        memberUserIds: [userId],
+        shareHome: false,
+        shareShopping: false,
+      };
+    }
+
+    const household = await prisma.household.findUnique({
+      where: { id: member.householdId },
+      select: { shareHome: true, shareShopping: true },
+    });
+
+    const members = await prisma.householdMember.findMany({
+      where: { householdId: member.householdId },
+      select: { userId: true },
+    });
+
+    return {
+      householdId: member.householdId,
+      memberUserIds: members.map((m) => m.userId),
+      shareHome: !!household?.shareHome,
+      shareShopping: !!household?.shareShopping,
+    };
+  }
 
   async getWeekPlan(
     userId: number,
@@ -657,11 +700,17 @@ export class ShoppingService {
     startDate: Date,
     endDate: Date,
   ): Promise<ShoppingItem[]> {
+    const sharing = await this.getSharingContext(userId);
+    const planUserIds = sharing.shareShopping ? sharing.memberUserIds : [userId];
+    const homeWhere = sharing.shareHome && sharing.householdId
+      ? { householdId: sharing.householdId, ingredientId: { not: null } }
+      : { userId, ingredientId: { not: null } };
+
     // Los ingredientes se necesitan para los PREP pendientes (preparaciones que hay que cocinar)
     // Los MEAL consumen recetas ya preparadas del inventario, no ingredientes directamente
     const preps = await prisma.weekPlan.findMany({
       where: {
-        userId,
+        userId: { in: planUserIds },
         plannedDate: { gte: startDate, lte: endDate },
         type: "prep",
         cooked: false,
@@ -672,7 +721,7 @@ export class ShoppingService {
     // También incluir meals que NO tienen receta preparada en casa (necesitan ingredientes directos)
     const meals = await prisma.weekPlan.findMany({
       where: {
-        userId,
+        userId: { in: planUserIds },
         plannedDate: { gte: startDate, lte: endDate },
         type: "meal",
         cooked: false,
@@ -682,7 +731,10 @@ export class ShoppingService {
 
     // Obtener recetas preparadas en casa para saber cuáles meals no necesitan ingredientes
     const homeRecipes = await prisma.homeItem.findMany({
-      where: { userId, recipeId: { not: null } },
+      where:
+        sharing.shareHome && sharing.householdId
+          ? { householdId: sharing.householdId, recipeId: { not: null } }
+          : { userId, recipeId: { not: null } },
     });
     const homeRecipeServings = new Map<number, number>();
     for (const item of homeRecipes) {
@@ -723,8 +775,17 @@ export class ShoppingService {
       }
     }
 
-    // Combinar preps pendientes + meals que necesitan ingredientes directos
-    const plans = [...preps, ...mealsNeedingIngredients];
+    // Añadir también entradas directas de ingrediente (sin receta)
+    const ingredientOnlyPlans = meals.filter(
+      (m) => !!m.ingredientId && !m.recipeId,
+    );
+
+    // Combinar preps pendientes + meals que necesitan ingredientes + ingredientes directos
+    const plans = [
+      ...preps,
+      ...mealsNeedingIngredients,
+      ...ingredientOnlyPlans,
+    ];
 
     // Calcular ingredientes necesarios EN EQUIVALENTE CRUDO (raw equivalent)
     // Esto permite comparar correctamente con el inventario
@@ -734,6 +795,29 @@ export class ShoppingService {
     >();
 
     for (const plan of plans) {
+      // Plan de ingrediente directo (sin receta)
+      if (plan.ingredientId && !plan.recipeId && plan.ingredient) {
+        const usedUnit = plan.ingredientUnit || plan.ingredient.unit;
+        const quantity = plan.ingredientQty || 0;
+        const rawEquivalent = this.convertToBaseUnit(
+          quantity,
+          usedUnit,
+          plan.ingredient,
+        );
+
+        const existing = ingredientNeeds.get(plan.ingredientId);
+        if (existing) {
+          existing.rawEquivalent += rawEquivalent;
+        } else {
+          ingredientNeeds.set(plan.ingredientId, {
+            rawEquivalent,
+            name: plan.ingredient.name,
+            ingredientData: plan.ingredient,
+          });
+        }
+        continue;
+      }
+
       if (!plan.recipe) continue;
       const ratio = plan.servings / plan.recipe.servings;
 
@@ -822,7 +906,7 @@ export class ShoppingService {
 
     // Obtener inventario actual (convertido a equivalente crudo)
     const homeItems = await prisma.homeItem.findMany({
-      where: { userId, ingredientId: { not: null } },
+      where: homeWhere,
       include: { variant: true },
     });
     const homeQuantities = new Map<number, number>();
@@ -883,10 +967,11 @@ export class ShoppingService {
       .sort((a, b) => a.name.localeCompare(b.name));
 
     // También incluir items manuales de la lista de compra (añadidos desde alertas, etc.)
-    const householdId = await this.getHouseholdId(userId);
     const manualItems = await prisma.shoppingItem.findMany({
       where: {
-        ...(householdId ? { householdId } : { userId }),
+        ...(sharing.shareShopping && sharing.householdId
+          ? { householdId: sharing.householdId }
+          : { userId }),
         weekPlanId: null,
         purchased: false,
       },
@@ -923,13 +1008,17 @@ export class ShoppingService {
     items: { ingredientId: number; quantity: number; unit: string }[],
     userId: number,
   ): Promise<{ added: number }> {
-    const householdId = await this.getHouseholdId(userId);
+    const sharing = await this.getSharingContext(userId);
+    const shoppingOwnerFilter =
+      sharing.shareShopping && sharing.householdId
+        ? { householdId: sharing.householdId }
+        : { userId };
     let added = 0;
 
     for (const item of items) {
       const existing = await prisma.shoppingItem.findFirst({
         where: {
-          ...(householdId ? { householdId } : { userId }),
+          ...shoppingOwnerFilter,
           ingredientId: item.ingredientId,
           weekPlanId: null,
           purchased: false,
@@ -948,7 +1037,9 @@ export class ShoppingService {
             ingredientId: item.ingredientId,
             quantity: item.quantity,
             unit: item.unit,
-            ...(householdId ? { householdId } : {}),
+            ...(sharing.shareShopping && sharing.householdId
+              ? { householdId: sharing.householdId }
+              : {}),
           },
         });
       }
@@ -956,14 +1047,6 @@ export class ShoppingService {
     }
 
     return { added };
-  }
-
-  private async getHouseholdId(userId: number): Promise<number | null> {
-    const member = await prisma.householdMember.findFirst({
-      where: { userId },
-      select: { householdId: true },
-    });
-    return member?.householdId ?? null;
   }
 
   // Convertir cantidad a unidad base (g o ml)
@@ -1002,15 +1085,28 @@ export class ShoppingService {
     ingredientId: number,
     userId: number,
   ): Promise<void> {
+    const sharing = await this.getSharingContext(userId);
     await prisma.shoppingItem.updateMany({
-      where: { userId, ingredientId, purchased: false },
+      where: {
+        ...(sharing.shareShopping && sharing.householdId
+          ? { householdId: sharing.householdId }
+          : { userId }),
+        ingredientId,
+        purchased: false,
+      },
       data: { purchased: true },
     });
   }
 
   async clearPurchasedItems(userId: number): Promise<void> {
+    const sharing = await this.getSharingContext(userId);
     await prisma.shoppingItem.deleteMany({
-      where: { userId, purchased: true },
+      where: {
+        ...(sharing.shareShopping && sharing.householdId
+          ? { householdId: sharing.householdId }
+          : { userId }),
+        purchased: true,
+      },
     });
   }
 
@@ -1180,6 +1276,12 @@ export class ShoppingService {
       throw new Error("Plan no encontrado");
     }
 
+    const sharing = await this.getSharingContext(userId);
+    const homeWhereBase =
+      sharing.shareHome && sharing.householdId
+        ? { householdId: sharing.householdId }
+        : { userId };
+
     let ingredientsDeducted = 0;
     const ingredientsNeeded = new Map<
       number,
@@ -1200,7 +1302,7 @@ export class ShoppingService {
       let remainingToDeduct = needed.quantity;
 
       const homeItems = await prisma.homeItem.findMany({
-        where: { userId, ingredientId },
+        where: { ...homeWhereBase, ingredientId },
         include: { ingredient: { include: { conversions: true } } },
         orderBy: { addedAt: "asc" },
       });
@@ -1238,6 +1340,9 @@ export class ShoppingService {
       await prisma.homeItem.create({
         data: {
           userId,
+          ...(sharing.shareHome && sharing.householdId
+            ? { householdId: sharing.householdId }
+            : {}),
           recipeId: plan.recipeId,
           location: leftoverLocation,
           quantity: leftoverServings,
@@ -1255,7 +1360,7 @@ export class ShoppingService {
     // Check alerts for deducted ingredients
     for (const [ingredientId, needed] of ingredientsNeeded) {
       const remainingItems = await prisma.homeItem.findMany({
-        where: { userId, ingredientId },
+        where: { ...homeWhereBase, ingredientId },
       });
       const totalRemaining = remainingItems.reduce(
         (sum, item) => sum + item.quantity,
@@ -1373,13 +1478,19 @@ export class ShoppingService {
       throw new Error("Esta comida ya fue consumida");
     }
 
+    const sharing = await this.getSharingContext(userId);
+    const homeWhereBase =
+      sharing.shareHome && sharing.householdId
+        ? { householdId: sharing.householdId }
+        : { userId };
+
     let servingsDeducted = 0;
 
     if (plan.recipeId) {
       let remainingServings = plan.servings;
 
       const homeItems = await prisma.homeItem.findMany({
-        where: { userId, recipeId: plan.recipeId },
+        where: { ...homeWhereBase, recipeId: plan.recipeId },
         orderBy: { addedAt: "asc" },
       });
 
@@ -1410,7 +1521,7 @@ export class ShoppingService {
     // Check alerts for consumed recipe
     if (plan.recipeId) {
       const remainingItems = await prisma.homeItem.findMany({
-        where: { userId, recipeId: plan.recipeId },
+        where: { ...homeWhereBase, recipeId: plan.recipeId },
       });
       const totalRemaining = remainingItems.reduce(
         (sum, item) => sum + item.quantity,
