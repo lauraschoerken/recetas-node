@@ -131,7 +131,7 @@ export const alertService = {
           }
         : { recipeId_userId: { recipeId: dto.recipeId, userId } };
 
-    return prisma.recipeMinThreshold.upsert({
+    const result = await prisma.recipeMinThreshold.upsert({
       where: where as any,
       update: { minServings: dto.minServings },
       create: {
@@ -142,6 +142,31 @@ export const alertService = {
           : { userId }),
       },
     });
+
+    // Retroactively check current stock against the new threshold
+    const homeItems = await prisma.homeItem.findMany({
+      where: {
+        recipeId: dto.recipeId,
+        ...(scope.useSharedAlerts && scope.householdId
+          ? { householdId: scope.householdId }
+          : { userId }),
+      },
+    });
+    const totalServings = homeItems.reduce(
+      (sum, item) => sum + item.quantity,
+      0,
+    );
+    if (totalServings < dto.minServings) {
+      await this.checkAndCreateAlerts({
+        userId,
+        recipeId: dto.recipeId,
+        triggerType: "THRESHOLD_SET",
+        beforeQty: totalServings,
+        afterQty: totalServings,
+      });
+    }
+
+    return result;
   },
 
   async deleteRecipeThreshold(recipeId: number, userId: number) {
