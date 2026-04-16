@@ -26,11 +26,25 @@ export interface DailyNutrition {
 }
 
 export class IngredientService {
-  async getAll(): Promise<Ingredient[]> {
-    return prisma.ingredient.findMany({
-      orderBy: { name: "asc" },
-      include: ingredientInclude,
-    });
+  async getAll(
+    opts: { page?: number; pageSize?: number; search?: string } = {},
+  ): Promise<{ data: Ingredient[]; total: number }> {
+    const { page, pageSize, search = "" } = opts;
+    const where = search
+      ? { name: { contains: search, mode: "insensitive" as const } }
+      : undefined;
+    const [data, total] = await prisma.$transaction([
+      prisma.ingredient.findMany({
+        where,
+        orderBy: { name: "asc" },
+        include: ingredientInclude,
+        ...(page && pageSize
+          ? { skip: (page - 1) * pageSize, take: pageSize }
+          : {}),
+      }),
+      prisma.ingredient.count({ where }),
+    ]);
+    return { data, total };
   }
 
   async search(query: string): Promise<Ingredient[]> {

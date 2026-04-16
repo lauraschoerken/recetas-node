@@ -22,14 +22,28 @@ export class IngredientController {
    * /api/ingredients:
    *   get:
    *     tags: [Ingredientes]
-   *     summary: Listar todos los ingredientes
+   *     summary: Listar ingredientes con paginación
+   *     parameters:
+   *       - in: query
+   *         name: page
+   *         schema: { type: integer }
+   *       - in: query
+   *         name: pageSize
+   *         schema: { type: integer }
+   *       - in: query
+   *         name: search
+   *         schema: { type: string }
    *     responses:
    *       200:
-   *         description: Lista de ingredientes
+   *         description: Objeto con data y total
    */
   @Get("/")
-  async getAll() {
-    return ingredientService.getAll();
+  async getAll(
+    @QueryParam("page") page?: number,
+    @QueryParam("pageSize") pageSize?: number,
+    @QueryParam("search") search?: string,
+  ) {
+    return ingredientService.getAll({ page, pageSize, search });
   }
 
   /**

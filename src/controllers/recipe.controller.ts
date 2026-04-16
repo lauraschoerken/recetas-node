@@ -6,6 +6,7 @@ import {
   Delete,
   Param,
   Body,
+  QueryParam,
   Req,
   UseBefore,
   HttpCode,
@@ -22,21 +23,49 @@ export class RecipeController {
    * /api/recipes:
    *   get:
    *     tags: [Recetas]
-   *     summary: Listar todas las recetas del usuario
-   *     description: Devuelve las recetas propias más las recetas públicas de otros usuarios
+   *     summary: Listar recetas del usuario con paginación
+   *     description: Devuelve las recetas propias más las recetas públicas de otros usuarios. Soporta paginación server-side.
+   *     parameters:
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *           default: 1
+   *         description: Número de página
+   *       - in: query
+   *         name: pageSize
+   *         schema:
+   *           type: integer
+   *           default: 12
+   *         description: Elementos por página
+   *       - in: query
+   *         name: search
+   *         schema:
+   *           type: string
+   *         description: Filtrar por título
    *     responses:
    *       200:
-   *         description: Lista de recetas
+   *         description: Objeto con data y total
    *         content:
    *           application/json:
    *             schema:
-   *               type: array
-   *               items:
-   *                 $ref: '#/components/schemas/Recipe'
+   *               type: object
+   *               properties:
+   *                 data:
+   *                   type: array
+   *                   items:
+   *                     $ref: '#/components/schemas/Recipe'
+   *                 total:
+   *                   type: integer
    */
   @Get("/")
-  async getAll(@Req() req: AuthRequest) {
-    return recipeService.getAll(req.userId!);
+  async getAll(
+    @Req() req: AuthRequest,
+    @QueryParam("page") page?: number,
+    @QueryParam("pageSize") pageSize?: number,
+    @QueryParam("search") search?: string,
+  ) {
+    return recipeService.getAll(req.userId!, { page, pageSize, search });
   }
 
   /**

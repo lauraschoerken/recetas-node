@@ -76,16 +76,31 @@ const recipeInclude = {
 };
 
 export class RecipeService {
-  async getAll(userId: number): Promise<RecipeWithComponents[]> {
-    const recipes = await prisma.recipe.findMany({
-      where: {
-        OR: [{ userId }, { isPublic: true }],
-      },
-      include: recipeInclude,
-      orderBy: { createdAt: "desc" },
-    });
-
-    return recipes.map((r) => this.mapRecipe(r, r.user.name));
+  async getAll(
+    userId: number,
+    opts: { page?: number; pageSize?: number; search?: string } = {},
+  ): Promise<{ data: RecipeWithComponents[]; total: number }> {
+    const { page, pageSize, search = "" } = opts;
+    const where = {
+      AND: [
+        { OR: [{ userId }, { isPublic: true }] },
+        ...(search
+          ? [{ title: { contains: search, mode: "insensitive" as const } }]
+          : []),
+      ],
+    };
+    const [recipes, total] = await prisma.$transaction([
+      prisma.recipe.findMany({
+        where,
+        include: recipeInclude,
+        orderBy: { createdAt: "desc" },
+        ...(page && pageSize
+          ? { skip: (page - 1) * pageSize, take: pageSize }
+          : {}),
+      }),
+      prisma.recipe.count({ where }),
+    ]);
+    return { data: recipes.map((r) => this.mapRecipe(r, r.user.name)), total };
   }
 
   async getById(
