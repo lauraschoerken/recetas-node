@@ -665,7 +665,7 @@ export class HomeItemService {
 
     if (!item) return null;
 
-    return prisma.homeItem.update({
+    const updated = (await prisma.homeItem.update({
       where: { id },
       data: {
         location: data.location,
@@ -679,7 +679,29 @@ export class HomeItemService {
               : undefined,
       },
       include: homeItemInclude,
-    }) as unknown as HomeItem;
+    })) as unknown as HomeItem;
+
+    // Trigger recipe stock alert if servings decreased
+    if (
+      item.recipeId &&
+      data.quantity !== undefined &&
+      data.quantity < item.quantity
+    ) {
+      const beforeTotal = await this.getTotalRecipeServings(
+        userId,
+        item.recipeId,
+      );
+      const delta = item.quantity - data.quantity;
+      await alertService.checkAndCreateAlerts({
+        userId,
+        recipeId: item.recipeId,
+        triggerType: "MANUAL",
+        beforeQty: beforeTotal + delta,
+        afterQty: beforeTotal,
+      });
+    }
+
+    return updated;
   }
 
   async delete(id: number, userId: number): Promise<boolean> {
@@ -696,6 +718,22 @@ export class HomeItemService {
     if (!item) return false;
 
     await prisma.homeItem.delete({ where: { id } });
+
+    // Trigger recipe stock alert after deletion
+    if (item.recipeId) {
+      const afterTotal = await this.getTotalRecipeServings(
+        userId,
+        item.recipeId,
+      );
+      await alertService.checkAndCreateAlerts({
+        userId,
+        recipeId: item.recipeId,
+        triggerType: "MANUAL",
+        beforeQty: afterTotal + item.quantity,
+        afterQty: afterTotal,
+      });
+    }
+
     return true;
   }
 
@@ -731,6 +769,16 @@ export class HomeItemService {
         remainingToDeduct = 0;
       }
     }
+
+    // Trigger recipe stock alert after deducting servings
+    const afterTotal = await this.getTotalRecipeServings(userId, recipeId);
+    await alertService.checkAndCreateAlerts({
+      userId,
+      recipeId,
+      triggerType: "COOK",
+      beforeQty: afterTotal + servings,
+      afterQty: afterTotal,
+    });
   }
 
   async processConsumedMeals(userId: number): Promise<{ processed: number }> {
@@ -1023,6 +1071,25 @@ export class HomeItemService {
     });
 
     return item;
+  }
+
+  private async getTotalRecipeServings(
+    userId: number,
+    recipeId: number,
+  ): Promise<number> {
+    const householdId = await householdService.getHouseholdId(userId);
+    const household = householdId
+      ? await prisma.household.findUnique({ where: { id: householdId } })
+      : null;
+    const where = household?.shareHome
+      ? { householdId, recipeId }
+      : { userId, recipeId };
+
+    const agg = await prisma.homeItem.aggregate({
+      where,
+      _sum: { quantity: true },
+    });
+    return agg._sum.quantity || 0;
   }
 
   private async getTotalQuantity(
