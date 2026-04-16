@@ -27,6 +27,24 @@ export const alertService = {
     };
   },
 
+  async getHomeScope(userId: number): Promise<{
+    useSharedHome: boolean;
+    householdId: number | null;
+  }> {
+    const householdId = await householdService.getHouseholdId(userId);
+    if (!householdId) return { useSharedHome: false, householdId: null };
+
+    const household = await prisma.household.findUnique({
+      where: { id: householdId },
+      select: { shareHome: true },
+    });
+
+    return {
+      useSharedHome: !!household?.shareHome,
+      householdId,
+    };
+  },
+
   // ── Thresholds ──
 
   async getIngredientThresholds(userId: number) {
@@ -72,16 +90,32 @@ export const alertService = {
       },
     });
 
-    // Retroactively check current stock against the new threshold
-    const homeItems = await prisma.homeItem.findMany({
+    // Retroactively check current stock — same logic as getTotalQuantity in homeItem.service
+    const hId = await householdService.getHouseholdId(userId);
+    const hh = hId
+      ? await prisma.household.findUnique({
+          where: { id: hId },
+          select: { shareHome: true },
+        })
+      : null;
+    const stockWhere = hh?.shareHome
+      ? { householdId: hId!, ingredientId: dto.ingredientId }
+      : { userId, ingredientId: dto.ingredientId };
+    const stockAgg = await prisma.homeItem.aggregate({
+      where: stockWhere,
+      _sum: { quantity: true },
+    });
+    const totalStock = stockAgg._sum.quantity || 0;
+    // Delete any stale alert so a fresh correct one is created below
+    await prisma.stockAlert.deleteMany({
       where: {
         ingredientId: dto.ingredientId,
+        status: { in: ["OPEN", "VIEWED", "SNOOZED"] },
         ...(scope.useSharedAlerts && scope.householdId
           ? { householdId: scope.householdId }
           : { userId }),
       },
     });
-    const totalStock = homeItems.reduce((sum, item) => sum + item.quantity, 0);
     if (totalStock < dto.minQuantity) {
       await this.checkAndCreateAlerts({
         userId,
@@ -143,19 +177,32 @@ export const alertService = {
       },
     });
 
-    // Retroactively check current stock against the new threshold
-    const homeItems = await prisma.homeItem.findMany({
+    // Retroactively check current stock — same logic as getTotalRecipeServings in homeItem.service
+    const hId = await householdService.getHouseholdId(userId);
+    const hh = hId
+      ? await prisma.household.findUnique({
+          where: { id: hId },
+          select: { shareHome: true },
+        })
+      : null;
+    const stockWhere = hh?.shareHome
+      ? { householdId: hId!, recipeId: dto.recipeId }
+      : { userId, recipeId: dto.recipeId };
+    const stockAgg = await prisma.homeItem.aggregate({
+      where: stockWhere,
+      _sum: { quantity: true },
+    });
+    const totalServings = stockAgg._sum.quantity || 0;
+    // Delete any stale alert so a fresh correct one is created below
+    await prisma.stockAlert.deleteMany({
       where: {
         recipeId: dto.recipeId,
+        status: { in: ["OPEN", "VIEWED", "SNOOZED"] },
         ...(scope.useSharedAlerts && scope.householdId
           ? { householdId: scope.householdId }
           : { userId }),
       },
     });
-    const totalServings = homeItems.reduce(
-      (sum, item) => sum + item.quantity,
-      0,
-    );
     if (totalServings < dto.minServings) {
       await this.checkAndCreateAlerts({
         userId,
