@@ -458,8 +458,11 @@ export class HomeItemService {
     let ingredientId = data.ingredientId;
 
     if (!ingredientId && !data.recipeId && data.ingredientName) {
-      const existingIngredient = await prisma.ingredient.findUnique({
-        where: { name: data.ingredientName.toLowerCase().trim() },
+      const existingIngredient = await prisma.ingredient.findFirst({
+        where: {
+          name: data.ingredientName.toLowerCase().trim(),
+          status: "GLOBAL",
+        },
       });
 
       if (existingIngredient) {

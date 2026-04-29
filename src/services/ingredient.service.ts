@@ -27,12 +27,22 @@ export interface DailyNutrition {
 
 export class IngredientService {
   async getAll(
-    opts: { page?: number; pageSize?: number; search?: string } = {},
+    opts: {
+      page?: number;
+      pageSize?: number;
+      search?: string;
+      userId?: number;
+    } = {},
   ): Promise<{ data: Ingredient[]; total: number }> {
-    const { page, pageSize, search = "" } = opts;
-    const where = search
+    const { page, pageSize, search = "", userId } = opts;
+    // Mostrar ingredientes GLOBAL + los propios (PRIVATE/PENDING) del usuario
+    const statusFilter = userId
+      ? { OR: [{ status: "GLOBAL" }, { createdByUserId: userId }] }
+      : { status: "GLOBAL" };
+    const searchFilter = search
       ? { name: { contains: search, mode: "insensitive" as const } }
-      : undefined;
+      : {};
+    const where = { ...statusFilter, ...searchFilter };
     const [data, total] = await prisma.$transaction([
       prisma.ingredient.findMany({
         where,
@@ -47,9 +57,13 @@ export class IngredientService {
     return { data, total };
   }
 
-  async search(query: string): Promise<Ingredient[]> {
+  async search(query: string, userId?: number): Promise<Ingredient[]> {
+    const statusFilter = userId
+      ? { OR: [{ status: "GLOBAL" }, { createdByUserId: userId }] }
+      : { status: "GLOBAL" };
     return prisma.ingredient.findMany({
       where: {
+        ...statusFilter,
         name: {
           contains: query.toLowerCase(),
           mode: "insensitive",
@@ -61,24 +75,23 @@ export class IngredientService {
     });
   }
 
-  async create(data: CreateIngredientDto): Promise<Ingredient> {
+  async create(
+    data: CreateIngredientDto,
+    userId?: number,
+  ): Promise<Ingredient> {
     const trimmed = data.name.trim();
     const normalizedName =
       trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
     const unit = data.unit === "ml" ? "ml" : "g";
 
-    const existingExact = await prisma.ingredient.findUnique({
-      where: { name: normalizedName },
+    // Buscar ingrediente GLOBAL existente con el mismo nombre
+    const existing = await prisma.ingredient.findFirst({
+      where: {
+        name: { equals: normalizedName, mode: "insensitive" },
+        status: "GLOBAL",
+      },
       include: ingredientInclude,
     });
-
-    // Also check case-insensitive (for existing lowercase entries)
-    const existing =
-      existingExact ||
-      (await prisma.ingredient.findFirst({
-        where: { name: { equals: normalizedName, mode: "insensitive" } },
-        include: ingredientInclude,
-      }));
 
     if (existing) {
       return prisma.ingredient.update({
@@ -137,8 +150,11 @@ export class IngredientService {
 
       const unit = data.unit === "ml" ? "ml" : "g";
 
-      const existing = await prisma.ingredient.findUnique({
-        where: { name: normalizedName },
+      const existing = await prisma.ingredient.findFirst({
+        where: {
+          name: { equals: normalizedName, mode: "insensitive" },
+          status: "GLOBAL",
+        },
         include: ingredientInclude,
       });
 
@@ -238,7 +254,51 @@ export class IngredientService {
     });
   }
 
-  // --- Variant methods ---
+  async setStatus(id: number, status: string): Promise<Ingredient | null> {
+    const ingredient = await prisma.ingredient.findUnique({ where: { id } });
+    if (!ingredient) return null;
+    return prisma.ingredient.update({
+      where: { id },
+      data: { status },
+      include: ingredientInclude,
+    });
+  }
+
+  // --- Override methods ---
+  async upsertOverride(
+    ingredientId: number,
+    userId: number,
+    data: {
+      preferredUnit?: string | null;
+      imageUrl?: string | null;
+      defaultLocation?: string | null;
+      preferredPurchaseVariantId?: number | null;
+      purchaseIsIndifferent?: boolean;
+    },
+  ) {
+    return prisma.ingredientUserOverride.upsert({
+      where: { userId_ingredientId: { userId, ingredientId } },
+      create: { userId, ingredientId, ...data },
+      update: data,
+    });
+  }
+
+  async getOverride(ingredientId: number, userId: number) {
+    return prisma.ingredientUserOverride.findUnique({
+      where: { userId_ingredientId: { userId, ingredientId } },
+    });
+  }
+
+  async deleteOverride(ingredientId: number, userId: number) {
+    const existing = await prisma.ingredientUserOverride.findUnique({
+      where: { userId_ingredientId: { userId, ingredientId } },
+    });
+    if (!existing) return;
+    await prisma.ingredientUserOverride.delete({
+      where: { userId_ingredientId: { userId, ingredientId } },
+    });
+  }
+
   async addVariant(
     ingredientId: number,
     data: CreateVariantDto,

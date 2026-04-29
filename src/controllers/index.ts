@@ -1,6 +1,10 @@
 export { AuthController } from "./auth.controller";
 export { RecipeController } from "./recipe.controller";
 export { IngredientController } from "./ingredient.controller";
+export { IngredientTagController } from "./ingredientTag.controller";
+export { IngredientProposalController } from "./ingredientProposal.controller";
+export { UserStoreController } from "./userStore.controller";
+export { AdminController } from "./admin.controller";
 export { ShoppingController } from "./shopping.controller";
 export { HomeItemController } from "./homeItem.controller";
 export { HouseholdController } from "./household.controller";

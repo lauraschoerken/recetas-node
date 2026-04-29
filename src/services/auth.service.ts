@@ -25,11 +25,12 @@ export class AuthService {
       },
     });
 
-    const token = this.generateToken(user.id);
+    const token = this.generateToken(user.id, user.role);
     const userResponse: UserResponse = {
       id: user.id,
       email: user.email,
       name: user.name,
+      role: user.role,
     };
 
     return { user: userResponse, token };
@@ -50,12 +51,13 @@ export class AuthService {
       throw new Error("Credenciales inválidas");
     }
 
-    const token = this.generateToken(user.id);
+    const token = this.generateToken(user.id, user.role);
     const userResponse: UserResponse = {
       id: user.id,
       email: user.email,
       name: user.name,
       imageUrl: user.imageUrl || undefined,
+      role: user.role,
     };
 
     return { user: userResponse, token };
@@ -73,6 +75,7 @@ export class AuthService {
       email: user.email,
       name: user.name,
       imageUrl: user.imageUrl || undefined,
+      role: user.role,
     };
   }
 
@@ -121,10 +124,12 @@ export class AuthService {
     return { success: true };
   }
 
-  private generateToken(userId: number): string {
-    return jwt.sign({ userId }, process.env.JWT_SECRET || "default-secret", {
-      expiresIn: "7d",
-    });
+  private generateToken(userId: number, role: string): string {
+    return jwt.sign(
+      { userId, role },
+      process.env.JWT_SECRET || "default-secret",
+      { expiresIn: "7d" },
+    );
   }
 }
 

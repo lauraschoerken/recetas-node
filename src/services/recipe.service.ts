@@ -159,10 +159,6 @@ export class RecipeService {
     if (!recipe) return null;
 
     const mapped = this.mapRecipe(recipe, recipe.user.name);
-    console.log(
-      "getById - components:",
-      JSON.stringify(mapped.components, null, 2),
-    );
     return mapped;
   }
 
@@ -170,12 +166,8 @@ export class RecipeService {
     data: CreateRecipeDto,
     userId: number,
   ): Promise<RecipeWithComponents> {
-    console.log("Creating recipe with data:", JSON.stringify(data, null, 2));
-    console.log("UserId:", userId);
-
     // Verificar que el usuario existe
     const user = await prisma.user.findUnique({ where: { id: userId } });
-    console.log("User exists:", !!user, user ? user.name : "N/A");
 
     if (!user) {
       throw new Error(`User with id ${userId} does not exist`);
@@ -216,8 +208,6 @@ export class RecipeService {
       });
     }
 
-    console.log("Ingredient data prepared:", ingredientData);
-
     // Paso 2: Crear la receta base (sin relaciones anidadas)
     const recipeData: any = {
       title: data.title,
@@ -241,8 +231,6 @@ export class RecipeService {
     const recipe = await prisma.recipe.create({
       data: recipeData,
     });
-
-    console.log("Recipe created with id:", recipe.id);
 
     // Paso 2.5: Crear ingredientes por separado
     for (const ing of ingredientData) {
@@ -334,11 +322,6 @@ export class RecipeService {
     data: UpdateRecipeDto,
     userId: number,
   ): Promise<RecipeWithComponents | null> {
-    console.log(
-      "Updating recipe with components:",
-      JSON.stringify(data.components, null, 2),
-    );
-
     const existing = await prisma.recipe.findFirst({
       where: { id, userId },
     });
@@ -442,9 +425,6 @@ export class RecipeService {
             let variantId: number | null = null;
             let cookedVariantId: number | null =
               (opt as any).cookedVariantId || null;
-            console.log(
-              `[UPDATE] Option "${opt.name}": cookedVariantId=${cookedVariantId}, raw opt.cookedVariantId=${(opt as any).cookedVariantId}`,
-            );
 
             if (opt.ingredientName) {
               const ingredient = await this.getOrCreateIngredient(

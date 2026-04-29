@@ -1,0 +1,185 @@
+import {
+  JsonController,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Param,
+  Body,
+  Req,
+  UseBefore,
+  HttpCode,
+} from "routing-controllers";
+import { userStoreService } from "../services";
+import { authMiddleware, AuthRequest } from "../middlewares";
+
+@JsonController("/stores")
+@UseBefore(authMiddleware)
+export class UserStoreController {
+  /**
+   * @swagger
+   * /api/stores:
+   *   get:
+   *     tags: [Tiendas]
+   *     summary: Listar tiendas del usuario
+   *     responses:
+   *       200:
+   *         description: Lista de tiendas
+   */
+  @Get("/")
+  async getAll(@Req() req: AuthRequest) {
+    return userStoreService.getAll(req.userId!);
+  }
+
+  /**
+   * @swagger
+   * /api/stores/{id}:
+   *   get:
+   *     tags: [Tiendas]
+   *     summary: Obtener tienda por ID
+   */
+  @Get("/:id")
+  async getById(@Param("id") id: number, @Req() req: AuthRequest) {
+    const store = await userStoreService.getById(id, req.userId!);
+    if (!store) throw { httpCode: 404, message: "Tienda no encontrada" };
+    return store;
+  }
+
+  /**
+   * @swagger
+   * /api/stores:
+   *   post:
+   *     tags: [Tiendas]
+   *     summary: Crear tienda
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [name]
+   *             properties:
+   *               name: { type: string }
+   *               url: { type: string }
+   *               logoUrl: { type: string }
+   *               isShared: { type: boolean }
+   *               householdId: { type: integer }
+   *     responses:
+   *       201:
+   *         description: Tienda creada
+   */
+  @Post("/")
+  @HttpCode(201)
+  async create(
+    @Req() req: AuthRequest,
+    @Body()
+    body: {
+      name: string;
+      url?: string;
+      logoUrl?: string;
+      isShared?: boolean;
+      householdId?: number;
+    },
+  ) {
+    if (!body.name) throw { httpCode: 400, message: "Nombre es requerido" };
+    return userStoreService.create(req.userId!, body);
+  }
+
+  /**
+   * @swagger
+   * /api/stores/{id}:
+   *   put:
+   *     tags: [Tiendas]
+   *     summary: Actualizar tienda
+   */
+  @Put("/:id")
+  async update(
+    @Param("id") id: number,
+    @Req() req: AuthRequest,
+    @Body()
+    body: { name?: string; url?: string; logoUrl?: string; isShared?: boolean },
+  ) {
+    const store = await userStoreService.update(id, req.userId!, body);
+    if (!store) throw { httpCode: 404, message: "Tienda no encontrada" };
+    return store;
+  }
+
+  /**
+   * @swagger
+   * /api/stores/{id}:
+   *   delete:
+   *     tags: [Tiendas]
+   *     summary: Eliminar tienda
+   */
+  @Delete("/:id")
+  @HttpCode(204)
+  async delete(@Param("id") id: number, @Req() req: AuthRequest) {
+    const ok = await userStoreService.delete(id, req.userId!);
+    if (!ok) throw { httpCode: 404, message: "Tienda no encontrada" };
+    return null;
+  }
+
+  // ===== Ingredientes en tienda =====
+
+  /**
+   * @swagger
+   * /api/stores/{id}/ingredients:
+   *   post:
+   *     tags: [Tiendas]
+   *     summary: Añadir ingrediente a una tienda
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [ingredientId]
+   *             properties:
+   *               ingredientId: { type: integer }
+   *               purchaseUrl: { type: string }
+   *               preferredUnit: { type: string }
+   *     responses:
+   *       201:
+   *         description: Ingrediente añadido
+   */
+  @Post("/:id/ingredients")
+  @HttpCode(201)
+  async addIngredient(
+    @Param("id") storeId: number,
+    @Req() req: AuthRequest,
+    @Body()
+    body: {
+      ingredientId: number;
+      purchaseUrl?: string;
+      preferredUnit?: string;
+    },
+  ) {
+    if (!body.ingredientId)
+      throw { httpCode: 400, message: "ingredientId es requerido" };
+    const result = await userStoreService.addIngredient(
+      storeId,
+      req.userId!,
+      body,
+    );
+    if (!result) throw { httpCode: 404, message: "Tienda no encontrada" };
+    return result;
+  }
+
+  /**
+   * @swagger
+   * /api/stores/{id}/ingredients/{ingredientId}:
+   *   delete:
+   *     tags: [Tiendas]
+   *     summary: Quitar ingrediente de una tienda
+   */
+  @Delete("/:id/ingredients/:ingredientId")
+  @HttpCode(204)
+  async removeIngredient(
+    @Param("id") storeId: number,
+    @Param("ingredientId") ingredientId: number,
+    @Req() req: AuthRequest,
+  ) {
+    await userStoreService.removeIngredient(storeId, ingredientId, req.userId!);
+    return null;
+  }
+}

@@ -6,6 +6,10 @@ import { useExpressServer } from "routing-controllers";
 import { AuthController } from "./controllers/auth.controller";
 import { RecipeController } from "./controllers/recipe.controller";
 import { IngredientController } from "./controllers/ingredient.controller";
+import { IngredientTagController } from "./controllers/ingredientTag.controller";
+import { IngredientProposalController } from "./controllers/ingredientProposal.controller";
+import { UserStoreController } from "./controllers/userStore.controller";
+import { AdminController } from "./controllers/admin.controller";
 import { ShoppingController } from "./controllers/shopping.controller";
 import { HomeItemController } from "./controllers/homeItem.controller";
 import { HouseholdController } from "./controllers/household.controller";
@@ -27,6 +31,10 @@ export function createApp() {
     AuthController,
     RecipeController,
     IngredientController,
+    IngredientTagController,
+    IngredientProposalController,
+    UserStoreController,
+    AdminController,
     ShoppingController,
     HomeItemController,
     HouseholdController,

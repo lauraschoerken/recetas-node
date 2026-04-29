@@ -257,8 +257,8 @@ export const backupService = {
         skipped = 0,
         updated = 0;
       for (const ing of data.ingredients) {
-        const existing = await prisma.ingredient.findUnique({
-          where: { name: ing.name },
+        const existing = await prisma.ingredient.findFirst({
+          where: { name: ing.name, status: "GLOBAL" },
         });
         if (existing) {
           if (mode === "overwrite") {
@@ -420,8 +420,8 @@ export const backupService = {
         // Resolve ingredient IDs
         const ingredientConnects = [];
         for (const ri of rec.ingredients || []) {
-          let ing = await prisma.ingredient.findUnique({
-            where: { name: ri.ingredientName },
+          let ing = await prisma.ingredient.findFirst({
+            where: { name: ri.ingredientName, status: "GLOBAL" },
           });
           if (!ing) {
             ing = await prisma.ingredient.create({
@@ -580,8 +580,8 @@ export const backupService = {
         let recipeId: number | null = null;
 
         if (hi.ingredientName) {
-          const ing = await prisma.ingredient.findUnique({
-            where: { name: hi.ingredientName },
+          const ing = await prisma.ingredient.findFirst({
+            where: { name: hi.ingredientName, status: "GLOBAL" },
           });
           if (ing) ingredientId = ing.id;
         }
@@ -619,8 +619,8 @@ export const backupService = {
       let created = 0,
         skipped = 0;
       for (const si of data.shoppingItems) {
-        const ing = await prisma.ingredient.findUnique({
-          where: { name: si.ingredientName },
+        const ing = await prisma.ingredient.findFirst({
+          where: { name: si.ingredientName, status: "GLOBAL" },
         });
         if (!ing) {
           skipped++;
@@ -647,8 +647,8 @@ export const backupService = {
         let created = 0,
           skipped = 0;
         for (const t of data.thresholds.ingredients) {
-          const ing = await prisma.ingredient.findUnique({
-            where: { name: t.ingredientName },
+          const ing = await prisma.ingredient.findFirst({
+            where: { name: t.ingredientName, status: "GLOBAL" },
           });
           if (!ing) {
             skipped++;

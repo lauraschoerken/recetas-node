@@ -25,6 +25,8 @@ model User {
   customProtein  Int?
   customCarbs    Int?
   customFat      Int?
+  role           String     @default("USER") // "USER" | "ADMIN"
+  planningAlertScope String?                 // "own" | "all"
   recipes        Recipe[]
   weekPlans      WeekPlan[]
   homeItems      HomeItem[]
@@ -33,7 +35,22 @@ model User {
   sentInvites       HouseholdInvite[]  @relation("InviteSender")
   stockAlerts       StockAlert[]
   homeItemHistories HomeItemHistory[]
-  planningAlertScope String?            // "own" | "all"
+  // Ingredientes creados por este usuario
+  createdIngredients        Ingredient[]                      @relation("UserCreatedIngredients")
+  createdVariants           IngredientVariant[]               @relation("UserCreatedVariants")
+  // Overrides personales
+  ingredientOverrides       IngredientUserOverride[]
+  variantOverrides          IngredientVariantUserOverride[]
+  conversionOverrides       IngredientConversionUserOverride[]
+  // Tags
+  createdTags               IngredientTag[]                   @relation("UserCreatedTags")
+  tagAssignments            IngredientTagAssignment[]
+  hiddenTags                IngredientTagHidden[]
+  // Propuestas
+  submittedProposals        IngredientProposal[]              @relation("ProposalCreator")
+  reviewedProposals         IngredientProposal[]              @relation("ProposalReviewer")
+  // Tiendas
+  stores                    UserStore[]
 }
 
 model Recipe {
@@ -98,10 +115,14 @@ model RecipeComponentOption {
 
 model Ingredient {
   id              Int                     @id @default(autoincrement())
-  name            String                  @unique
+  name            String                  // sin @unique — se gestiona con partial index para GLOBAL
+  status          String                  @default("GLOBAL") // "GLOBAL" | "PENDING" | "PRIVATE" | "REJECTED"
+  createdByUserId Int?
   unit            String
   preferredUnit   String?                 // Unidad preferida para mostrar en lista de compra (ej: "diente" para ajo)
   imageUrl        String?
+  defaultLocation String?
+  createdBy       User?                   @relation("UserCreatedIngredients", fields: [createdByUserId], references: [id], onDelete: SetNull)
   recipes         RecipeIngredient[]
   componentOptions RecipeComponentOption[]
   homeItems       HomeItem[]
@@ -109,21 +130,30 @@ model Ingredient {
   variants        IngredientVariant[]
   shoppingItems   ShoppingItem[]
   weekPlans       WeekPlan[]
-  defaultLocation String?
   minThresholds   IngredientMinThreshold[]
+  // Nuevas relaciones
+  overrides              IngredientUserOverride[]
+  conversionOverrides    IngredientConversionUserOverride[]
+  tagAssignments         IngredientTagAssignment[]
+  hiddenTags             IngredientTagHidden[]
+  proposals              IngredientProposal[]
+  storeItems             UserStoreIngredient[]
 }
 
 model IngredientVariant {
   id           Int        @id @default(autoincrement())
   name         String     @default("Crudo")
   isDefault    Boolean    @default(true)
+  isGlobal     Boolean    @default(true)       // false = variante personal (solo visible al creador)
+  createdByUserId Int?
   calories     Float?
   protein      Float?
   carbs        Float?
   fat          Float?
   fiber        Float?
-  weightFactor Float      @default(1.0)  // Factor de conversión de peso (ej: arroz cocinado = 3x crudo)
+  weightFactor Float      @default(1.0)        // Factor de conversión de peso (ej: arroz cocinado = 3x crudo)
   ingredientId Int
+  createdBy    User?      @relation("UserCreatedVariants", fields: [createdByUserId], references: [id], onDelete: SetNull)
   ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
   // Relaciones con RecipeIngredient
   recipeIngredientsPurchase RecipeIngredient[] @relation("IngredientPurchaseVariant")
@@ -133,6 +163,11 @@ model IngredientVariant {
   optionsCooked   RecipeComponentOption[] @relation("OptionCookedVariant")
   // Relación con HomeItem
   homeItems HomeItem[]
+  // Overrides y propuestas
+  overrides    IngredientVariantUserOverride[]
+  proposals    IngredientProposal[]
+
+  @@unique([ingredientId, name])
 }
 
 model UnitConversion {
@@ -242,6 +277,7 @@ model Household {
   homeItems     HomeItem[]
   shoppingItems ShoppingItem[]
   stockAlerts   StockAlert[]
+  stores        UserStore[]
 }
 
 model HouseholdMember {
@@ -329,3 +365,138 @@ model HomeItemHistory {
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   homeItem   HomeItem @relation(fields: [homeItemId], references: [id], onDelete: Cascade)
 }
+
+// ── Sobreescrituras personales de ingredientes ──
+
+model IngredientUserOverride {
+  id                         Int               @id @default(autoincrement())
+  userId                     Int
+  ingredientId               Int
+  preferredUnit              String?
+  imageUrl                   String?
+  defaultLocation            String?
+  preferredPurchaseVariantId Int?
+  purchaseIsIndifferent      Boolean           @default(false)
+  user                       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ingredient                 Ingredient        @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, ingredientId])
+}
+
+model IngredientVariantUserOverride {
+  id           Int               @id @default(autoincrement())
+  userId       Int
+  variantId    Int
+  calories     Float?
+  protein      Float?
+  carbs        Float?
+  fat          Float?
+  fiber        Float?
+  weightFactor Float?
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  variant      IngredientVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, variantId])
+}
+
+model IngredientConversionUserOverride {
+  id           Int        @id @default(autoincrement())
+  userId       Int
+  ingredientId Int
+  unitName     String
+  gramsPerUnit Float
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, ingredientId, unitName])
+}
+
+// ── Tags de ingredientes ──
+
+model IngredientTag {
+  id              Int                       @id @default(autoincrement())
+  name            String
+  color           String?
+  isGlobal        Boolean                   @default(false) // true = admin la crea visible para todos
+  createdByUserId Int?
+  createdBy       User?                     @relation("UserCreatedTags", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  assignments     IngredientTagAssignment[]
+  hidden          IngredientTagHidden[]
+}
+
+model IngredientTagAssignment {
+  id           Int           @id @default(autoincrement())
+  ingredientId Int
+  tagId        Int
+  userId       Int?          // null = asignación global (por admin); non-null = asignación personal del usuario
+  ingredient   Ingredient    @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  tag          IngredientTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  user         User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([ingredientId, tagId, userId])
+}
+
+model IngredientTagHidden {
+  id           Int           @id @default(autoincrement())
+  userId       Int
+  ingredientId Int
+  tagId        Int
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ingredient   Ingredient    @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  tag          IngredientTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, ingredientId, tagId])
+}
+
+// ── Propuestas de ingredientes (para revisión de admin) ──
+
+model IngredientProposal {
+  id               Int                @id @default(autoincrement())
+  // Tipos: "NEW_INGREDIENT" | "EDIT_FIELD" | "NEW_VARIANT" | "EDIT_VARIANT" | "NEW_CONVERSION"
+  type             String
+  // Estados: "PENDING" | "ACCEPTED" | "REJECTED"
+  status           String             @default("PENDING")
+  proposedByUserId Int
+  reviewedByUserId Int?
+  ingredientId     Int
+  variantId        Int?
+  fieldName        String?
+  currentValue     Json?
+  proposedValue    Json?
+  adminNote        String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  proposedBy       User               @relation("ProposalCreator", fields: [proposedByUserId], references: [id], onDelete: Cascade)
+  reviewedBy       User?              @relation("ProposalReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  ingredient       Ingredient         @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  variant          IngredientVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+}
+
+// ── Tiendas de usuario ──
+
+model UserStore {
+  id          Int                  @id @default(autoincrement())
+  userId      Int
+  name        String
+  url         String?
+  logoUrl     String?
+  isShared    Boolean              @default(false)
+  householdId Int?
+  createdAt   DateTime             @default(now())
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  household   Household?           @relation(fields: [householdId], references: [id], onDelete: SetNull)
+  ingredients UserStoreIngredient[]
+}
+
+model UserStoreIngredient {
+  id            Int        @id @default(autoincrement())
+  storeId       Int
+  ingredientId  Int
+  purchaseUrl   String?
+  preferredUnit String?
+  store         UserStore  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  ingredient    Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, ingredientId])
+}
+

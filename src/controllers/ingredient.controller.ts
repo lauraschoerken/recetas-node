@@ -4,6 +4,7 @@ import {
   Post,
   Put,
   Delete,
+  Patch,
   Param,
   Body,
   QueryParam,
@@ -12,7 +13,7 @@ import {
   HttpCode,
 } from "routing-controllers";
 import { ingredientService } from "../services";
-import { authMiddleware, AuthRequest } from "../middlewares";
+import { authMiddleware, adminMiddleware, AuthRequest } from "../middlewares";
 
 @JsonController("/ingredients")
 @UseBefore(authMiddleware)
@@ -42,8 +43,14 @@ export class IngredientController {
     @QueryParam("page") page?: number,
     @QueryParam("pageSize") pageSize?: number,
     @QueryParam("search") search?: string,
+    @Req() req?: AuthRequest,
   ) {
-    return ingredientService.getAll({ page, pageSize, search });
+    return ingredientService.getAll({
+      page,
+      pageSize,
+      search,
+      userId: req?.userId,
+    });
   }
 
   /**
@@ -54,11 +61,11 @@ export class IngredientController {
    *     summary: Buscar ingredientes por nombre
    */
   @Get("/search")
-  async search(@QueryParam("q") query: string) {
+  async search(@QueryParam("q") query: string, @Req() req: AuthRequest) {
     if (!query) {
       throw { httpCode: 400, message: "Parámetro de búsqueda requerido" };
     }
-    return ingredientService.search(query);
+    return ingredientService.search(query, req.userId);
   }
 
   /**
@@ -488,5 +495,111 @@ export class IngredientController {
     }
 
     return null;
+  }
+
+  // ===================== OVERRIDES =====================
+
+  /**
+   * @swagger
+   * /api/ingredients/{id}/override:
+   *   put:
+   *     tags: [Ingredientes]
+   *     summary: Guardar override personal del usuario para un ingrediente
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema: { type: integer }
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               preferredUnit: { type: string }
+   *               imageUrl: { type: string }
+   *               defaultLocation: { type: string }
+   *               preferredPurchaseVariantId: { type: integer }
+   *               purchaseIsIndifferent: { type: boolean }
+   *     responses:
+   *       200:
+   *         description: Override guardado
+   */
+  @Put("/:id/override")
+  async upsertOverride(
+    @Param("id") ingredientId: number,
+    @Req() req: AuthRequest,
+    @Body()
+    body: {
+      preferredUnit?: string | null;
+      imageUrl?: string | null;
+      defaultLocation?: string | null;
+      preferredPurchaseVariantId?: number | null;
+      purchaseIsIndifferent?: boolean;
+    },
+  ) {
+    const userId = req.userId!;
+    return ingredientService.upsertOverride(ingredientId, userId, body);
+  }
+
+  /**
+   * @swagger
+   * /api/ingredients/{id}/override:
+   *   get:
+   *     tags: [Ingredientes]
+   *     summary: Obtener override personal del usuario para un ingrediente
+   */
+  @Get("/:id/override")
+  async getOverride(
+    @Param("id") ingredientId: number,
+    @Req() req: AuthRequest,
+  ) {
+    return ingredientService.getOverride(ingredientId, req.userId!);
+  }
+
+  /**
+   * @swagger
+   * /api/ingredients/{id}/override:
+   *   delete:
+   *     tags: [Ingredientes]
+   *     summary: Eliminar override personal del usuario para un ingrediente
+   */
+  @Delete("/:id/override")
+  @HttpCode(204)
+  async deleteOverride(
+    @Param("id") ingredientId: number,
+    @Req() req: AuthRequest,
+  ) {
+    await ingredientService.deleteOverride(ingredientId, req.userId!);
+    return null;
+  }
+
+  // ===================== ADMIN: actualizar globalmente =====================
+
+  /**
+   * @swagger
+   * /api/ingredients/{id}/approve:
+   *   patch:
+   *     tags: [Ingredientes]
+   *     summary: (Admin) Aprobar ingrediente PENDING → GLOBAL
+   */
+  @Patch("/:id/approve")
+  @UseBefore(adminMiddleware)
+  async approve(@Param("id") id: number) {
+    return ingredientService.setStatus(id, "GLOBAL");
+  }
+
+  /**
+   * @swagger
+   * /api/ingredients/{id}/reject:
+   *   patch:
+   *     tags: [Ingredientes]
+   *     summary: (Admin) Rechazar ingrediente PENDING → REJECTED
+   */
+  @Patch("/:id/reject")
+  @UseBefore(adminMiddleware)
+  async reject(@Param("id") id: number) {
+    return ingredientService.setStatus(id, "REJECTED");
   }
 }

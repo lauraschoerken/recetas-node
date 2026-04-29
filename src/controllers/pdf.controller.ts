@@ -310,8 +310,8 @@ export class PdfController {
 
       const ingredientConnects = [];
       for (const ing of parsed.ingredients) {
-        let ingredient = await prisma.ingredient.findUnique({
-          where: { name: ing.name },
+        let ingredient = await prisma.ingredient.findFirst({
+          where: { name: ing.name, status: "GLOBAL" },
         });
         if (!ingredient) {
           ingredient = await prisma.ingredient.create({
@@ -410,7 +410,9 @@ export class PdfController {
         for (const ing of r.ingredients || []) {
           const name = (ing.name || "").trim();
           if (!name) continue;
-          let dbIng = await prisma.ingredient.findUnique({ where: { name } });
+          let dbIng = await prisma.ingredient.findFirst({
+            where: { name, status: "GLOBAL" },
+          });
           if (!dbIng) {
             dbIng = await prisma.ingredient.create({
               data: { name, unit: ing.unit || "g" },

@@ -1,20 +1,20 @@
-import { PrismaClient } from '@prisma/client';
-import bcrypt from 'bcrypt';
+import { PrismaClient } from "@prisma/client";
+import bcrypt from "bcrypt";
 
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('Iniciando seed...');
+  console.log("Iniciando seed...");
 
   // Crear usuario demo
-  const hashedPassword = await bcrypt.hash('demo1234', 10);
-  
+  const hashedPassword = await bcrypt.hash("demo1234", 10);
+
   const demoUser = await prisma.user.upsert({
-    where: { email: 'demo@recetas.com' },
+    where: { email: "demo@recetas.com" },
     update: {},
     create: {
-      email: 'demo@recetas.com',
-      name: 'Usuario Demo',
+      email: "demo@recetas.com",
+      name: "Usuario Demo",
       password: hashedPassword,
     },
   });
@@ -24,8 +24,9 @@ async function main() {
   // Definir recetas con ingredientes
   const recipes = [
     {
-      title: 'Sopa de Verduras',
-      description: 'Una sopa reconfortante y nutritiva con verduras frescas de temporada.',
+      title: "Sopa de Verduras",
+      description:
+        "Una sopa reconfortante y nutritiva con verduras frescas de temporada.",
       instructions: `1. Lavar y cortar todas las verduras en cubos pequeños.
 2. En una olla grande, calentar el aceite de oliva a fuego medio.
 3. Añadir la cebolla y el puerro, sofreír 5 minutos hasta que estén transparentes.
@@ -37,21 +38,22 @@ async function main() {
       servings: 4,
       isPublic: true,
       ingredients: [
-        { name: 'Zanahoria', quantity: 2, unit: 'unidades' },
-        { name: 'Patata', quantity: 2, unit: 'unidades' },
-        { name: 'Puerro', quantity: 1, unit: 'unidad' },
-        { name: 'Cebolla', quantity: 1, unit: 'unidad' },
-        { name: 'Apio', quantity: 2, unit: 'ramas' },
-        { name: 'Judías verdes', quantity: 100, unit: 'g' },
-        { name: 'Caldo de verduras', quantity: 1.5, unit: 'L' },
-        { name: 'Aceite de oliva', quantity: 3, unit: 'cucharadas' },
-        { name: 'Sal', quantity: 1, unit: 'pizca' },
-        { name: 'Pimienta', quantity: 1, unit: 'pizca' },
+        { name: "Zanahoria", quantity: 2, unit: "unidades" },
+        { name: "Patata", quantity: 2, unit: "unidades" },
+        { name: "Puerro", quantity: 1, unit: "unidad" },
+        { name: "Cebolla", quantity: 1, unit: "unidad" },
+        { name: "Apio", quantity: 2, unit: "ramas" },
+        { name: "Judías verdes", quantity: 100, unit: "g" },
+        { name: "Caldo de verduras", quantity: 1.5, unit: "L" },
+        { name: "Aceite de oliva", quantity: 3, unit: "cucharadas" },
+        { name: "Sal", quantity: 1, unit: "pizca" },
+        { name: "Pimienta", quantity: 1, unit: "pizca" },
       ],
     },
     {
-      title: 'Carrilleras de Cerdo al Vino Tinto',
-      description: 'Carrilleras tiernas y jugosas cocinadas a fuego lento en una deliciosa salsa de vino tinto.',
+      title: "Carrilleras de Cerdo al Vino Tinto",
+      description:
+        "Carrilleras tiernas y jugosas cocinadas a fuego lento en una deliciosa salsa de vino tinto.",
       instructions: `1. Salpimentar las carrilleras y enharinarlas ligeramente.
 2. En una cazuela, dorar las carrilleras por todos los lados con aceite de oliva. Reservar.
 3. En la misma cazuela, sofreír la cebolla, la zanahoria y el puerro picados durante 10 minutos.
@@ -65,23 +67,24 @@ async function main() {
       servings: 4,
       isPublic: true,
       ingredients: [
-        { name: 'Carrilleras de cerdo', quantity: 8, unit: 'unidades' },
-        { name: 'Vino tinto', quantity: 500, unit: 'ml' },
-        { name: 'Caldo de carne', quantity: 300, unit: 'ml' },
-        { name: 'Cebolla', quantity: 2, unit: 'unidades' },
-        { name: 'Zanahoria', quantity: 2, unit: 'unidades' },
-        { name: 'Puerro', quantity: 1, unit: 'unidad' },
-        { name: 'Ajo', quantity: 4, unit: 'dientes' },
-        { name: 'Harina', quantity: 2, unit: 'cucharadas' },
-        { name: 'Aceite de oliva', quantity: 4, unit: 'cucharadas' },
-        { name: 'Tomillo', quantity: 1, unit: 'rama' },
-        { name: 'Romero', quantity: 1, unit: 'rama' },
-        { name: 'Laurel', quantity: 2, unit: 'hojas' },
+        { name: "Carrilleras de cerdo", quantity: 8, unit: "unidades" },
+        { name: "Vino tinto", quantity: 500, unit: "ml" },
+        { name: "Caldo de carne", quantity: 300, unit: "ml" },
+        { name: "Cebolla", quantity: 2, unit: "unidades" },
+        { name: "Zanahoria", quantity: 2, unit: "unidades" },
+        { name: "Puerro", quantity: 1, unit: "unidad" },
+        { name: "Ajo", quantity: 4, unit: "dientes" },
+        { name: "Harina", quantity: 2, unit: "cucharadas" },
+        { name: "Aceite de oliva", quantity: 4, unit: "cucharadas" },
+        { name: "Tomillo", quantity: 1, unit: "rama" },
+        { name: "Romero", quantity: 1, unit: "rama" },
+        { name: "Laurel", quantity: 2, unit: "hojas" },
       ],
     },
     {
-      title: 'Crema de Calabaza',
-      description: 'Crema suave y aterciopelada de calabaza, perfecta para los días fríos.',
+      title: "Crema de Calabaza",
+      description:
+        "Crema suave y aterciopelada de calabaza, perfecta para los días fríos.",
       instructions: `1. Pelar la calabaza y cortarla en cubos.
 2. Picar la cebolla y el puerro.
 3. En una olla, calentar el aceite y sofreír la cebolla y el puerro 5 minutos.
@@ -95,20 +98,21 @@ async function main() {
       servings: 4,
       isPublic: true,
       ingredients: [
-        { name: 'Calabaza', quantity: 800, unit: 'g' },
-        { name: 'Patata', quantity: 1, unit: 'unidad' },
-        { name: 'Cebolla', quantity: 1, unit: 'unidad' },
-        { name: 'Puerro', quantity: 1, unit: 'unidad' },
-        { name: 'Caldo de verduras', quantity: 800, unit: 'ml' },
-        { name: 'Nata para cocinar', quantity: 100, unit: 'ml' },
-        { name: 'Aceite de oliva', quantity: 2, unit: 'cucharadas' },
-        { name: 'Nuez moscada', quantity: 1, unit: 'pizca' },
-        { name: 'Semillas de calabaza', quantity: 30, unit: 'g' },
+        { name: "Calabaza", quantity: 800, unit: "g" },
+        { name: "Patata", quantity: 1, unit: "unidad" },
+        { name: "Cebolla", quantity: 1, unit: "unidad" },
+        { name: "Puerro", quantity: 1, unit: "unidad" },
+        { name: "Caldo de verduras", quantity: 800, unit: "ml" },
+        { name: "Nata para cocinar", quantity: 100, unit: "ml" },
+        { name: "Aceite de oliva", quantity: 2, unit: "cucharadas" },
+        { name: "Nuez moscada", quantity: 1, unit: "pizca" },
+        { name: "Semillas de calabaza", quantity: 30, unit: "g" },
       ],
     },
     {
-      title: 'Poke de Salmón',
-      description: 'Bowl hawaiano fresco y saludable con salmón marinado, arroz y vegetales.',
+      title: "Poke de Salmón",
+      description:
+        "Bowl hawaiano fresco y saludable con salmón marinado, arroz y vegetales.",
       instructions: `1. Cocinar el arroz según las instrucciones del paquete. Dejar enfriar.
 2. Cortar el salmón en cubos de 2cm.
 3. Marinar el salmón con salsa de soja, aceite de sésamo y un poco de jengibre rallado durante 15 minutos.
@@ -121,22 +125,23 @@ async function main() {
       servings: 2,
       isPublic: true,
       ingredients: [
-        { name: 'Salmón fresco', quantity: 300, unit: 'g' },
-        { name: 'Arroz para sushi', quantity: 200, unit: 'g' },
-        { name: 'Aguacate', quantity: 1, unit: 'unidad' },
-        { name: 'Pepino', quantity: 1, unit: 'unidad' },
-        { name: 'Mango', quantity: 1, unit: 'unidad' },
-        { name: 'Edamame', quantity: 100, unit: 'g' },
-        { name: 'Salsa de soja', quantity: 4, unit: 'cucharadas' },
-        { name: 'Aceite de sésamo', quantity: 1, unit: 'cucharada' },
-        { name: 'Jengibre', quantity: 1, unit: 'cucharadita' },
-        { name: 'Semillas de sésamo', quantity: 2, unit: 'cucharadas' },
-        { name: 'Cebollino', quantity: 2, unit: 'cucharadas' },
+        { name: "Salmón fresco", quantity: 300, unit: "g" },
+        { name: "Arroz para sushi", quantity: 200, unit: "g" },
+        { name: "Aguacate", quantity: 1, unit: "unidad" },
+        { name: "Pepino", quantity: 1, unit: "unidad" },
+        { name: "Mango", quantity: 1, unit: "unidad" },
+        { name: "Edamame", quantity: 100, unit: "g" },
+        { name: "Salsa de soja", quantity: 4, unit: "cucharadas" },
+        { name: "Aceite de sésamo", quantity: 1, unit: "cucharada" },
+        { name: "Jengibre", quantity: 1, unit: "cucharadita" },
+        { name: "Semillas de sésamo", quantity: 2, unit: "cucharadas" },
+        { name: "Cebollino", quantity: 2, unit: "cucharadas" },
       ],
     },
     {
-      title: 'Tortilla de Patatas',
-      description: 'La clásica tortilla española, jugosa por dentro y dorada por fuera.',
+      title: "Tortilla de Patatas",
+      description:
+        "La clásica tortilla española, jugosa por dentro y dorada por fuera.",
       instructions: `1. Pelar y cortar las patatas en láminas finas.
 2. Picar la cebolla en juliana fina (opcional).
 3. En una sartén con abundante aceite de oliva, freír las patatas a fuego medio-bajo.
@@ -152,16 +157,17 @@ async function main() {
       servings: 4,
       isPublic: true,
       ingredients: [
-        { name: 'Patata', quantity: 600, unit: 'g' },
-        { name: 'Huevos', quantity: 6, unit: 'unidades' },
-        { name: 'Cebolla', quantity: 1, unit: 'unidad' },
-        { name: 'Aceite de oliva', quantity: 200, unit: 'ml' },
-        { name: 'Sal', quantity: 1, unit: 'cucharadita' },
+        { name: "Patata", quantity: 600, unit: "g" },
+        { name: "Huevos", quantity: 6, unit: "unidades" },
+        { name: "Cebolla", quantity: 1, unit: "unidad" },
+        { name: "Aceite de oliva", quantity: 200, unit: "ml" },
+        { name: "Sal", quantity: 1, unit: "cucharadita" },
       ],
     },
     {
-      title: 'Pasta Carbonara',
-      description: 'Auténtica pasta carbonara italiana con guanciale, huevo y pecorino.',
+      title: "Pasta Carbonara",
+      description:
+        "Auténtica pasta carbonara italiana con guanciale, huevo y pecorino.",
       instructions: `1. Poner a hervir agua con sal para la pasta.
 2. Cortar el guanciale (o panceta) en tiras.
 3. En una sartén sin aceite, dorar el guanciale hasta que esté crujiente. Reservar.
@@ -177,18 +183,19 @@ async function main() {
       servings: 4,
       isPublic: true,
       ingredients: [
-        { name: 'Espaguetis', quantity: 400, unit: 'g' },
-        { name: 'Guanciale', quantity: 200, unit: 'g' },
-        { name: 'Yemas de huevo', quantity: 4, unit: 'unidades' },
-        { name: 'Huevos', quantity: 1, unit: 'unidad' },
-        { name: 'Queso pecorino', quantity: 100, unit: 'g' },
-        { name: 'Pimienta negra', quantity: 1, unit: 'cucharadita' },
-        { name: 'Sal', quantity: 1, unit: 'pizca' },
+        { name: "Espaguetis", quantity: 400, unit: "g" },
+        { name: "Guanciale", quantity: 200, unit: "g" },
+        { name: "Yemas de huevo", quantity: 4, unit: "unidades" },
+        { name: "Huevos", quantity: 1, unit: "unidad" },
+        { name: "Queso pecorino", quantity: 100, unit: "g" },
+        { name: "Pimienta negra", quantity: 1, unit: "cucharadita" },
+        { name: "Sal", quantity: 1, unit: "pizca" },
       ],
     },
     {
-      title: 'Ensalada César',
-      description: 'Ensalada fresca con pollo a la plancha, croutones crujientes y salsa César casera.',
+      title: "Ensalada César",
+      description:
+        "Ensalada fresca con pollo a la plancha, croutones crujientes y salsa César casera.",
       instructions: `1. Preparar la salsa César: mezclar mayonesa, ajo picado, zumo de limón, mostaza, anchoas picadas y queso parmesano rallado.
 2. Salpimentar las pechugas de pollo y cocinarlas a la plancha hasta que estén doradas y hechas por dentro.
 3. Dejar reposar el pollo 5 minutos y cortar en tiras.
@@ -200,21 +207,22 @@ async function main() {
       servings: 2,
       isPublic: true,
       ingredients: [
-        { name: 'Lechuga romana', quantity: 1, unit: 'unidad' },
-        { name: 'Pechuga de pollo', quantity: 2, unit: 'unidades' },
-        { name: 'Pan de hogaza', quantity: 100, unit: 'g' },
-        { name: 'Queso parmesano', quantity: 50, unit: 'g' },
-        { name: 'Mayonesa', quantity: 4, unit: 'cucharadas' },
-        { name: 'Anchoas', quantity: 4, unit: 'filetes' },
-        { name: 'Ajo', quantity: 2, unit: 'dientes' },
-        { name: 'Limón', quantity: 1, unit: 'unidad' },
-        { name: 'Mostaza Dijon', quantity: 1, unit: 'cucharadita' },
-        { name: 'Aceite de oliva', quantity: 3, unit: 'cucharadas' },
+        { name: "Lechuga romana", quantity: 1, unit: "unidad" },
+        { name: "Pechuga de pollo", quantity: 2, unit: "unidades" },
+        { name: "Pan de hogaza", quantity: 100, unit: "g" },
+        { name: "Queso parmesano", quantity: 50, unit: "g" },
+        { name: "Mayonesa", quantity: 4, unit: "cucharadas" },
+        { name: "Anchoas", quantity: 4, unit: "filetes" },
+        { name: "Ajo", quantity: 2, unit: "dientes" },
+        { name: "Limón", quantity: 1, unit: "unidad" },
+        { name: "Mostaza Dijon", quantity: 1, unit: "cucharadita" },
+        { name: "Aceite de oliva", quantity: 3, unit: "cucharadas" },
       ],
     },
     {
-      title: 'Pollo al Horno con Patatas',
-      description: 'Pollo jugoso asado al horno con patatas doradas y hierbas aromáticas.',
+      title: "Pollo al Horno con Patatas",
+      description:
+        "Pollo jugoso asado al horno con patatas doradas y hierbas aromáticas.",
       instructions: `1. Precalentar el horno a 200°C.
 2. Lavar y secar el pollo. Salpimentar por dentro y por fuera.
 3. Rellenar el interior con limón cortado, ajo y hierbas.
@@ -230,18 +238,18 @@ async function main() {
       servings: 4,
       isPublic: true,
       ingredients: [
-        { name: 'Pollo entero', quantity: 1.5, unit: 'kg' },
-        { name: 'Patata', quantity: 800, unit: 'g' },
-        { name: 'Cebolla', quantity: 2, unit: 'unidades' },
-        { name: 'Ajo', quantity: 1, unit: 'cabeza' },
-        { name: 'Limón', quantity: 1, unit: 'unidad' },
-        { name: 'Mantequilla', quantity: 50, unit: 'g' },
-        { name: 'Vino blanco', quantity: 150, unit: 'ml' },
-        { name: 'Tomillo', quantity: 4, unit: 'ramas' },
-        { name: 'Romero', quantity: 2, unit: 'ramas' },
-        { name: 'Aceite de oliva', quantity: 4, unit: 'cucharadas' },
-        { name: 'Sal', quantity: 1, unit: 'cucharada' },
-        { name: 'Pimienta', quantity: 1, unit: 'cucharadita' },
+        { name: "Pollo entero", quantity: 1.5, unit: "kg" },
+        { name: "Patata", quantity: 800, unit: "g" },
+        { name: "Cebolla", quantity: 2, unit: "unidades" },
+        { name: "Ajo", quantity: 1, unit: "cabeza" },
+        { name: "Limón", quantity: 1, unit: "unidad" },
+        { name: "Mantequilla", quantity: 50, unit: "g" },
+        { name: "Vino blanco", quantity: 150, unit: "ml" },
+        { name: "Tomillo", quantity: 4, unit: "ramas" },
+        { name: "Romero", quantity: 2, unit: "ramas" },
+        { name: "Aceite de oliva", quantity: 4, unit: "cucharadas" },
+        { name: "Sal", quantity: 1, unit: "cucharada" },
+        { name: "Pimienta", quantity: 1, unit: "cucharadita" },
       ],
     },
   ];
@@ -253,11 +261,19 @@ async function main() {
     // Crear o actualizar ingredientes
     const ingredientRecords = [];
     for (const ing of ingredients) {
-      const ingredient = await prisma.ingredient.upsert({
-        where: { name: ing.name },
-        update: { unit: ing.unit },
-        create: { name: ing.name, unit: ing.unit },
+      let ingredient = await prisma.ingredient.findFirst({
+        where: { name: ing.name, status: "GLOBAL" },
       });
+      if (!ingredient) {
+        ingredient = await prisma.ingredient.create({
+          data: { name: ing.name, unit: ing.unit },
+        });
+      } else {
+        ingredient = await prisma.ingredient.update({
+          where: { id: ingredient.id },
+          data: { unit: ing.unit },
+        });
+      }
       ingredientRecords.push({ ...ingredient, quantity: ing.quantity });
     }
 
@@ -289,7 +305,7 @@ async function main() {
     }
   }
 
-  console.log('Seed completado!');
+  console.log("Seed completado!");
 }
 
 main()

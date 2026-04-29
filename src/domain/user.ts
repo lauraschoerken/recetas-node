@@ -23,6 +23,7 @@ export interface UserResponse {
   email: string;
   name: string;
   imageUrl?: string;
+  role?: string;
 }
 
 export interface AuthResponse {

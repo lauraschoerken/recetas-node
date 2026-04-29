@@ -1,6 +1,10 @@
 export { authService } from "./auth.service";
 export { recipeService } from "./recipe.service";
 export { ingredientService } from "./ingredient.service";
+export { ingredientTagService } from "./ingredientTag.service";
+export { ingredientProposalService } from "./ingredientProposal.service";
+export { userStoreService } from "./userStore.service";
+export { adminService } from "./admin.service";
 export { shoppingService } from "./shopping.service";
 export { homeItemService } from "./homeItem.service";
 export { profileService } from "./profile.service";
