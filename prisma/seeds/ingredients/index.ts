@@ -16,6 +16,7 @@ export { aceitesGrasas } from "./09-aceites-grasas";
 export { condimentosEspecias } from "./10-condimentos-especias";
 export { salsasCaldos } from "./11-salsas-caldos";
 export { bebidas } from "./12-bebidas";
+export { snacksPreparados } from "./13-snacks-preparados";
 
 import { verduras } from "./01-verduras";
 import { frutas } from "./02-frutas";
@@ -29,6 +30,7 @@ import { aceitesGrasas } from "./09-aceites-grasas";
 import { condimentosEspecias } from "./10-condimentos-especias";
 import { salsasCaldos } from "./11-salsas-caldos";
 import { bebidas } from "./12-bebidas";
+import { snacksPreparados } from "./13-snacks-preparados";
 
 export const allIngredients: IngredientSeedData[] = [
   ...verduras,
@@ -43,4 +45,5 @@ export const allIngredients: IngredientSeedData[] = [
   ...condimentosEspecias,
   ...salsasCaldos,
   ...bebidas,
+  ...snacksPreparados,
 ];

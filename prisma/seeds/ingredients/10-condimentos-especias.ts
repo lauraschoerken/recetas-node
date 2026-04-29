@@ -1062,4 +1062,73 @@ export const condimentosEspecias: IngredientSeedData[] = [
       { unitName: "cucharadita extracto", gramsPerUnit: 4 },
     ],
   },
+  // ── AÑADIDOS DESDE SQL ──────────────────────────────────────────────────
+  {
+    name: "Pimentón ahumado",
+    unit: "g",
+    defaultLocation: "despensa",
+    variants: [
+      {
+        name: "Pimentón ahumado",
+        isDefault: true,
+        calories: 282,
+        protein: 14,
+        carbs: 54,
+        fat: 13,
+        fiber: 21,
+      },
+    ],
+    conversions: [{ unitName: "cucharadita", gramsPerUnit: 2.5 }],
+  },
+  {
+    name: "Albahaca seca",
+    unit: "g",
+    defaultLocation: "despensa",
+    variants: [
+      {
+        name: "Seca",
+        isDefault: true,
+        calories: 233,
+        protein: 23,
+        carbs: 47,
+        fat: 4,
+        fiber: 35,
+      },
+    ],
+    conversions: [{ unitName: "cucharadita", gramsPerUnit: 1 }],
+  },
+  {
+    name: "Perejil seco",
+    unit: "g",
+    defaultLocation: "despensa",
+    variants: [
+      {
+        name: "Seco",
+        isDefault: true,
+        calories: 292,
+        protein: 26,
+        carbs: 50,
+        fat: 5,
+        fiber: 26,
+      },
+    ],
+    conversions: [{ unitName: "cucharadita", gramsPerUnit: 1 }],
+  },
+  {
+    name: "Anís estrellado",
+    unit: "g",
+    defaultLocation: "despensa",
+    variants: [
+      {
+        name: "Entero (seco)",
+        isDefault: true,
+        calories: 337,
+        protein: 18,
+        carbs: 50,
+        fat: 16,
+        fiber: 15,
+      },
+    ],
+    conversions: [{ unitName: "estrella", gramsPerUnit: 2 }],
+  },
 ];

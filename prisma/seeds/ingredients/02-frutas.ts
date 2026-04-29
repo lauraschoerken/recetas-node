@@ -755,4 +755,65 @@ export const frutas: IngredientSeedData[] = [
     ],
     conversions: [{ unitName: "kg", gramsPerUnit: 1000 }],
   },
+  // ── AÑADIDOS DESDE SQL ──────────────────────────────────────────────────
+  {
+    name: "Nectarina",
+    unit: "g",
+    variants: [
+      {
+        name: "Cruda",
+        isDefault: true,
+        calories: 44,
+        protein: 1.1,
+        carbs: 10.6,
+        fat: 0.3,
+        fiber: 1.7,
+      },
+    ],
+    conversions: [{ unitName: "nectarina mediana", gramsPerUnit: 150 }],
+  },
+  {
+    name: "Plátano de Canarias",
+    unit: "g",
+    variants: [
+      {
+        name: "Crudo (maduro)",
+        isDefault: true,
+        calories: 92,
+        protein: 1.2,
+        carbs: 24,
+        fat: 0.3,
+        fiber: 2.8,
+      },
+      {
+        name: "Crudo (verde)",
+        isDefault: false,
+        calories: 100,
+        protein: 1.3,
+        carbs: 26,
+        fat: 0.3,
+        fiber: 2.2,
+      },
+    ],
+    conversions: [
+      { unitName: "plátano de Canarias", gramsPerUnit: 100 },
+      { unitName: "plátano de Canarias grande", gramsPerUnit: 140 },
+    ],
+  },
+  {
+    name: "Chirimoya",
+    unit: "g",
+    variants: [
+      {
+        name: "Cruda",
+        isDefault: true,
+        calories: 75,
+        protein: 1.6,
+        carbs: 17.7,
+        fat: 0.7,
+        fiber: 3,
+      },
+    ],
+    conversions: [{ unitName: "chirimoya mediana", gramsPerUnit: 250 }],
+  },
 ];

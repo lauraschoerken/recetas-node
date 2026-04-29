@@ -404,4 +404,35 @@ export const legumbres: IngredientSeedData[] = [
     ],
     conversions: [{ unitName: "kg", gramsPerUnit: 1000 }],
   },
+  // ── AÑADIDOS DESDE SQL ──────────────────────────────────────────────────
+  {
+    name: "Alubias pintas",
+    unit: "g",
+    defaultLocation: "despensa",
+    variants: [
+      {
+        name: "Seca",
+        isDefault: true,
+        calories: 340,
+        protein: 21,
+        carbs: 63,
+        fat: 0.5,
+        fiber: 15,
+      },
+      {
+        name: "Cocida",
+        isDefault: false,
+        calories: 143,
+        protein: 9,
+        carbs: 26,
+        fat: 0.6,
+        fiber: 7.7,
+        weightFactor: 2.5,
+      },
+    ],
+    conversions: [
+      { unitName: "taza (200g seco)", gramsPerUnit: 200 },
+      { unitName: "lata (400g escurrida)", gramsPerUnit: 240 },
+    ],
+  },
 ];
