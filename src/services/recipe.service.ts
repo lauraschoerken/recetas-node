@@ -100,6 +100,8 @@ export class RecipeService {
       visibilityFilter = { isPublic: true };
     } else if (visibility === "mine") {
       visibilityFilter = { userId };
+    } else if (visibility === "private") {
+      visibilityFilter = { userId, isPublic: false };
     } else {
       visibilityFilter = { OR: [{ userId }, { isPublic: true }] };
     }
