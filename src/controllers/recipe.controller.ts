@@ -43,6 +43,18 @@ export class RecipeController {
    *         schema:
    *           type: string
    *         description: Filtrar por título
+   *       - in: query
+   *         name: visibility
+   *         schema:
+   *           type: string
+   *           enum: [all, public, mine]
+   *           default: all
+   *         description: Filtrar por visibilidad (all/public/mine)
+   *       - in: query
+   *         name: ingredient
+   *         schema:
+   *           type: string
+   *         description: Filtrar por nombre de ingrediente
    *     responses:
    *       200:
    *         description: Objeto con data y total
@@ -64,8 +76,16 @@ export class RecipeController {
     @QueryParam("page") page?: number,
     @QueryParam("pageSize") pageSize?: number,
     @QueryParam("search") search?: string,
+    @QueryParam("visibility") visibility?: string,
+    @QueryParam("ingredient") ingredient?: string,
   ) {
-    return recipeService.getAll(req.userId!, { page, pageSize, search });
+    return recipeService.getAll(req.userId!, {
+      page,
+      pageSize,
+      search,
+      visibility,
+      ingredient,
+    });
   }
 
   /**

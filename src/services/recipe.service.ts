@@ -78,14 +78,53 @@ const recipeInclude = {
 export class RecipeService {
   async getAll(
     userId: number,
-    opts: { page?: number; pageSize?: number; search?: string } = {},
+    opts: {
+      page?: number;
+      pageSize?: number;
+      search?: string;
+      visibility?: string;
+      ingredient?: string;
+    } = {},
   ): Promise<{ data: RecipeWithComponents[]; total: number }> {
-    const { page, pageSize, search = "" } = opts;
+    const {
+      page,
+      pageSize,
+      search = "",
+      visibility = "all",
+      ingredient = "",
+    } = opts;
+
+    // Filtro de visibilidad
+    let visibilityFilter: object;
+    if (visibility === "public") {
+      visibilityFilter = { isPublic: true };
+    } else if (visibility === "mine") {
+      visibilityFilter = { userId };
+    } else {
+      visibilityFilter = { OR: [{ userId }, { isPublic: true }] };
+    }
+
     const where = {
       AND: [
-        { OR: [{ userId }, { isPublic: true }] },
+        visibilityFilter,
         ...(search
           ? [{ title: { contains: search, mode: "insensitive" as const } }]
+          : []),
+        ...(ingredient
+          ? [
+              {
+                ingredients: {
+                  some: {
+                    ingredient: {
+                      name: {
+                        contains: ingredient,
+                        mode: "insensitive" as const,
+                      },
+                    },
+                  },
+                },
+              },
+            ]
           : []),
       ],
     };
