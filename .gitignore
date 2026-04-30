@@ -13,6 +13,7 @@ node_modules
 # Carpetas de build
 dist
 dist-ssr
+dist-test
 
 # Archivos locales
 *.local
