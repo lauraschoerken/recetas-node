@@ -26,100 +26,255 @@ export interface DailyNutrition {
 }
 
 export class IngredientService {
+  // ── Helper: aplicar overrides personales al array de ingredientes ──
+  private async applyUserOverrides(
+    data: Ingredient[],
+    userId: number,
+  ): Promise<Ingredient[]> {
+    if (data.length === 0) return data;
+    const ingredientIds = data.map((i) => i.id);
+    const [ingredientOverrides, conversionOverrides] = await Promise.all([
+      prisma.ingredientUserOverride.findMany({
+        where: { userId, ingredientId: { in: ingredientIds } },
+      }),
+      prisma.ingredientConversionUserOverride.findMany({
+        where: { userId, ingredientId: { in: ingredientIds } },
+      }),
+    ]);
+
+    const overrideMap = new Map(
+      ingredientOverrides.map((o) => [o.ingredientId, o]),
+    );
+    const convOverrideMap = new Map<number, typeof conversionOverrides>();
+    for (const co of conversionOverrides) {
+      if (!convOverrideMap.has(co.ingredientId))
+        convOverrideMap.set(co.ingredientId, []);
+      convOverrideMap.get(co.ingredientId)!.push(co);
+    }
+
+    return data.map((ingredient) => {
+      const override = overrideMap.get(ingredient.id);
+      const convOverrides = convOverrideMap.get(ingredient.id) ?? [];
+      const result = { ...ingredient } as Record<string, unknown>;
+
+      if (override) {
+        if (override.imageUrl !== null && override.imageUrl !== undefined)
+          result.imageUrl = override.imageUrl;
+        if (
+          override.defaultLocation !== null &&
+          override.defaultLocation !== undefined
+        )
+          result.defaultLocation = override.defaultLocation;
+        if (
+          override.preferredUnit !== null &&
+          override.preferredUnit !== undefined
+        )
+          result.preferredUnit = override.preferredUnit;
+      }
+
+      if (convOverrides.length > 0) {
+        const globalConversions =
+          (ingredient.conversions as UnitConversion[]) ?? [];
+        const globalUnitNames = new Set(
+          globalConversions.map((c) => c.unitName.toLowerCase()),
+        );
+        const userConversions = convOverrides
+          .filter((co) => !globalUnitNames.has(co.unitName.toLowerCase()))
+          .map((co) => ({
+            id: co.id,
+            unitName: co.unitName,
+            gramsPerUnit: co.gramsPerUnit,
+            ingredientId: co.ingredientId,
+            isUserOverride: true,
+          }));
+        result.conversions = [...globalConversions, ...userConversions];
+      }
+
+      return result as unknown as Ingredient;
+    });
+  }
+
   async getAll(
     opts: {
       page?: number;
       pageSize?: number;
       search?: string;
       userId?: number;
+      sortBy?: string;
+      sortOrder?: "asc" | "desc";
+      location?: string;
+      statusFilter?: string; // 'GLOBAL' | 'PRIVATE' | 'PENDING'
+      hasNutrition?: boolean;
+      minCalories?: number;
+      maxCalories?: number;
+      minProtein?: number;
+      maxProtein?: number;
+      minCarbs?: number;
+      maxCarbs?: number;
+      minFat?: number;
+      maxFat?: number;
+      tagIds?: number[]; // filtrar por tags asignadas
     } = {},
   ): Promise<{ data: Ingredient[]; total: number }> {
-    const { page, pageSize, search = "", userId } = opts;
-    // Mostrar ingredientes GLOBAL + los propios (PRIVATE/PENDING) del usuario
-    const statusFilter = userId
-      ? { OR: [{ status: "GLOBAL" }, { createdByUserId: userId }] }
-      : { status: "GLOBAL" };
+    const {
+      page,
+      pageSize,
+      search = "",
+      userId,
+      sortBy = "name",
+      sortOrder = "asc",
+      location,
+      statusFilter: statusParam,
+      hasNutrition,
+      minCalories,
+      maxCalories,
+      minProtein,
+      maxProtein,
+      minCarbs,
+      maxCarbs,
+      minFat,
+      maxFat,
+      tagIds,
+    } = opts;
+
+    // Filtro de estado/visibilidad
+    let visibilityFilter: Record<string, unknown>;
+    if (statusParam === "GLOBAL") {
+      visibilityFilter = { status: "GLOBAL" };
+    } else if (statusParam === "PRIVATE" && userId) {
+      visibilityFilter = { createdByUserId: userId, status: "PRIVATE" };
+    } else if (statusParam === "PENDING" && userId) {
+      visibilityFilter = { createdByUserId: userId, status: "PENDING" };
+    } else {
+      visibilityFilter = userId
+        ? { OR: [{ status: "GLOBAL" }, { createdByUserId: userId }] }
+        : { status: "GLOBAL" };
+    }
+
     const searchFilter = search
       ? { name: { contains: search, mode: "insensitive" as const } }
       : {};
-    const where = { ...statusFilter, ...searchFilter };
-    const [data, total] = await prisma.$transaction([
-      prisma.ingredient.findMany({
-        where,
-        orderBy: { name: "asc" },
-        include: ingredientInclude,
-        ...(page && pageSize
-          ? { skip: (page - 1) * pageSize, take: pageSize }
-          : {}),
-      }),
-      prisma.ingredient.count({ where }),
-    ]);
 
-    // Fusionar overrides personales del usuario si está autenticado
-    if (userId && data.length > 0) {
-      const ingredientIds = data.map((i) => i.id);
-      const [ingredientOverrides, conversionOverrides] = await Promise.all([
-        prisma.ingredientUserOverride.findMany({
-          where: { userId, ingredientId: { in: ingredientIds } },
-        }),
-        prisma.ingredientConversionUserOverride.findMany({
-          where: { userId, ingredientId: { in: ingredientIds } },
-        }),
-      ]);
+    const locationFilter = location
+      ? { defaultLocation: { equals: location, mode: "insensitive" as const } }
+      : {};
 
-      const overrideMap = new Map(
-        ingredientOverrides.map((o) => [o.ingredientId, o]),
-      );
-      const convOverrideMap = new Map<number, typeof conversionOverrides>();
-      for (const co of conversionOverrides) {
-        if (!convOverrideMap.has(co.ingredientId))
-          convOverrideMap.set(co.ingredientId, []);
-        convOverrideMap.get(co.ingredientId)!.push(co);
+    // Filtro de variantes (macros)
+    const macroFiltersActive =
+      hasNutrition ||
+      minCalories != null ||
+      maxCalories != null ||
+      minProtein != null ||
+      maxProtein != null ||
+      minCarbs != null ||
+      maxCarbs != null ||
+      minFat != null ||
+      maxFat != null;
+
+    let variantWhere: Record<string, unknown> = { isDefault: true };
+    if (macroFiltersActive) {
+      if (hasNutrition)
+        variantWhere = { ...variantWhere, calories: { not: null } };
+      if (minCalories != null || maxCalories != null) {
+        variantWhere.calories = {
+          ...(typeof variantWhere.calories === "object" && variantWhere.calories
+            ? (variantWhere.calories as object)
+            : {}),
+          ...(minCalories != null ? { gte: minCalories } : {}),
+          ...(maxCalories != null ? { lte: maxCalories } : {}),
+        };
       }
+      if (minProtein != null || maxProtein != null) {
+        variantWhere.protein = {
+          ...(minProtein != null ? { gte: minProtein } : {}),
+          ...(maxProtein != null ? { lte: maxProtein } : {}),
+        };
+      }
+      if (minCarbs != null || maxCarbs != null) {
+        variantWhere.carbs = {
+          ...(minCarbs != null ? { gte: minCarbs } : {}),
+          ...(maxCarbs != null ? { lte: maxCarbs } : {}),
+        };
+      }
+      if (minFat != null || maxFat != null) {
+        variantWhere.fat = {
+          ...(minFat != null ? { gte: minFat } : {}),
+          ...(maxFat != null ? { lte: maxFat } : {}),
+        };
+      }
+    }
 
-      const mergedData = data.map((ingredient) => {
-        const override = overrideMap.get(ingredient.id);
-        const convOverrides = convOverrideMap.get(ingredient.id) ?? [];
-        const result = { ...ingredient } as Record<string, unknown>;
+    const where: Record<string, unknown> = {
+      ...visibilityFilter,
+      ...searchFilter,
+      ...locationFilter,
+      ...(macroFiltersActive ? { variants: { some: variantWhere } } : {}),
+      ...(tagIds && tagIds.length > 0
+        ? {
+            tagAssignments: {
+              some: {
+                tagId: { in: tagIds },
+                OR: [{ userId: null }, ...(userId ? [{ userId }] : [])],
+              },
+            },
+          }
+        : {}),
+    };
 
-        if (override) {
-          if (override.imageUrl !== null && override.imageUrl !== undefined)
-            result.imageUrl = override.imageUrl;
-          if (
-            override.defaultLocation !== null &&
-            override.defaultLocation !== undefined
-          )
-            result.defaultLocation = override.defaultLocation;
-          if (
-            override.preferredUnit !== null &&
-            override.preferredUnit !== undefined
-          )
-            result.preferredUnit = override.preferredUnit;
-        }
+    const macroSortFields = ["calories", "protein", "carbs", "fat", "fiber"];
+    const sortByMacro = macroSortFields.includes(sortBy);
 
-        if (convOverrides.length > 0) {
-          const globalConversions =
-            (ingredient.conversions as UnitConversion[]) ?? [];
-          const globalUnitNames = new Set(
-            globalConversions.map((c) => c.unitName.toLowerCase()),
-          );
-          // Añadir las conversiones personales que no duplican unidades globales
-          const userConversions = convOverrides
-            .filter((co) => !globalUnitNames.has(co.unitName.toLowerCase()))
-            .map((co) => ({
-              id: co.id,
-              unitName: co.unitName,
-              gramsPerUnit: co.gramsPerUnit,
-              ingredientId: co.ingredientId,
-              isUserOverride: true,
-            }));
-          result.conversions = [...globalConversions, ...userConversions];
-        }
+    let data: Ingredient[];
+    let total: number;
 
-        return result;
+    if (sortByMacro) {
+      // Ordenar por macro: recuperar todos y ordenar en JS (Prisma no soporta orderBy en relaciones to-many)
+      const allData = await prisma.ingredient.findMany({
+        where,
+        include: ingredientInclude,
       });
+      const field = sortBy as
+        | "calories"
+        | "protein"
+        | "carbs"
+        | "fat"
+        | "fiber";
+      const sorted = allData.sort((a, b) => {
+        const av =
+          (a.variants as IngredientVariant[]).find((v) => v.isDefault) ??
+          (a.variants as IngredientVariant[])[0];
+        const bv =
+          (b.variants as IngredientVariant[]).find((v) => v.isDefault) ??
+          (b.variants as IngredientVariant[])[0];
+        const aVal = av?.[field] ?? 0;
+        const bVal = bv?.[field] ?? 0;
+        const aNum = typeof aVal === "number" ? aVal : 0;
+        const bNum = typeof bVal === "number" ? bVal : 0;
+        return sortOrder === "asc" ? aNum - bNum : bNum - aNum;
+      });
+      total = sorted.length;
+      data =
+        page && pageSize
+          ? sorted.slice((page - 1) * pageSize, page * pageSize)
+          : sorted;
+    } else {
+      const [raw, count] = await prisma.$transaction([
+        prisma.ingredient.findMany({
+          where,
+          orderBy: { name: sortOrder === "desc" ? "desc" : "asc" },
+          include: ingredientInclude,
+          ...(page && pageSize
+            ? { skip: (page - 1) * pageSize, take: pageSize }
+            : {}),
+        }),
+        prisma.ingredient.count({ where }),
+      ]);
+      data = raw as unknown as Ingredient[];
+      total = count;
+    }
 
-      return { data: mergedData as unknown as Ingredient[], total };
+    if (userId && data.length > 0) {
+      data = await this.applyUserOverrides(data, userId);
     }
 
     return { data, total };

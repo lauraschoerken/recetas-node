@@ -23,7 +23,7 @@ export class IngredientController {
    * /api/ingredients:
    *   get:
    *     tags: [Ingredientes]
-   *     summary: Listar ingredientes con paginación
+   *     summary: Listar ingredientes con paginación y filtros
    *     parameters:
    *       - in: query
    *         name: page
@@ -34,6 +34,49 @@ export class IngredientController {
    *       - in: query
    *         name: search
    *         schema: { type: string }
+   *       - in: query
+   *         name: sortBy
+   *         schema: { type: string, enum: [name, calories, protein, carbs, fat, fiber] }
+   *       - in: query
+   *         name: sortOrder
+   *         schema: { type: string, enum: [asc, desc] }
+   *       - in: query
+   *         name: location
+   *         schema: { type: string }
+   *       - in: query
+   *         name: statusFilter
+   *         schema: { type: string, enum: [GLOBAL, PRIVATE, PENDING] }
+   *       - in: query
+   *         name: hasNutrition
+   *         schema: { type: boolean }
+   *       - in: query
+   *         name: minCalories
+   *         schema: { type: number }
+   *       - in: query
+   *         name: maxCalories
+   *         schema: { type: number }
+   *       - in: query
+   *         name: minProtein
+   *         schema: { type: number }
+   *       - in: query
+   *         name: maxProtein
+   *         schema: { type: number }
+   *       - in: query
+   *         name: minCarbs
+   *         schema: { type: number }
+   *       - in: query
+   *         name: maxCarbs
+   *         schema: { type: number }
+   *       - in: query
+   *         name: minFat
+   *         schema: { type: number }
+   *       - in: query
+   *         name: maxFat
+   *         schema: { type: number }
+   *       - in: query
+   *         name: tags
+   *         schema: { type: string }
+   *         description: IDs de tags separados por coma (ej. "1,3,7")
    *     responses:
    *       200:
    *         description: Objeto con data y total
@@ -43,13 +86,48 @@ export class IngredientController {
     @QueryParam("page") page?: number,
     @QueryParam("pageSize") pageSize?: number,
     @QueryParam("search") search?: string,
+    @QueryParam("sortBy") sortBy?: string,
+    @QueryParam("sortOrder") sortOrder?: string,
+    @QueryParam("location") location?: string,
+    @QueryParam("statusFilter") statusFilter?: string,
+    @QueryParam("hasNutrition") hasNutrition?: boolean,
+    @QueryParam("minCalories") minCalories?: number,
+    @QueryParam("maxCalories") maxCalories?: number,
+    @QueryParam("minProtein") minProtein?: number,
+    @QueryParam("maxProtein") maxProtein?: number,
+    @QueryParam("minCarbs") minCarbs?: number,
+    @QueryParam("maxCarbs") maxCarbs?: number,
+    @QueryParam("minFat") minFat?: number,
+    @QueryParam("maxFat") maxFat?: number,
+    @QueryParam("tags") tagsParam?: string,
     @Req() req?: AuthRequest,
   ) {
+    const tagIds = tagsParam
+      ? tagsParam
+          .split(",")
+          .map(Number)
+          .filter((n) => !isNaN(n) && n > 0)
+      : undefined;
+
     return ingredientService.getAll({
       page,
       pageSize,
       search,
       userId: req?.userId,
+      sortBy,
+      sortOrder: sortOrder as "asc" | "desc" | undefined,
+      location,
+      statusFilter,
+      hasNutrition,
+      minCalories,
+      maxCalories,
+      minProtein,
+      maxProtein,
+      minCarbs,
+      maxCarbs,
+      minFat,
+      maxFat,
+      tagIds,
     });
   }
 
