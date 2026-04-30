@@ -54,6 +54,74 @@ export class IngredientService {
       }),
       prisma.ingredient.count({ where }),
     ]);
+
+    // Fusionar overrides personales del usuario si está autenticado
+    if (userId && data.length > 0) {
+      const ingredientIds = data.map((i) => i.id);
+      const [ingredientOverrides, conversionOverrides] = await Promise.all([
+        prisma.ingredientUserOverride.findMany({
+          where: { userId, ingredientId: { in: ingredientIds } },
+        }),
+        prisma.ingredientConversionUserOverride.findMany({
+          where: { userId, ingredientId: { in: ingredientIds } },
+        }),
+      ]);
+
+      const overrideMap = new Map(
+        ingredientOverrides.map((o) => [o.ingredientId, o]),
+      );
+      const convOverrideMap = new Map<number, typeof conversionOverrides>();
+      for (const co of conversionOverrides) {
+        if (!convOverrideMap.has(co.ingredientId))
+          convOverrideMap.set(co.ingredientId, []);
+        convOverrideMap.get(co.ingredientId)!.push(co);
+      }
+
+      const mergedData = data.map((ingredient) => {
+        const override = overrideMap.get(ingredient.id);
+        const convOverrides = convOverrideMap.get(ingredient.id) ?? [];
+        const result = { ...ingredient } as Record<string, unknown>;
+
+        if (override) {
+          if (override.imageUrl !== null && override.imageUrl !== undefined)
+            result.imageUrl = override.imageUrl;
+          if (
+            override.defaultLocation !== null &&
+            override.defaultLocation !== undefined
+          )
+            result.defaultLocation = override.defaultLocation;
+          if (
+            override.preferredUnit !== null &&
+            override.preferredUnit !== undefined
+          )
+            result.preferredUnit = override.preferredUnit;
+        }
+
+        if (convOverrides.length > 0) {
+          const globalConversions =
+            (ingredient.conversions as UnitConversion[]) ?? [];
+          const globalUnitNames = new Set(
+            globalConversions.map((c) => c.unitName.toLowerCase()),
+          );
+          // Añadir las conversiones personales que no duplican unidades globales
+          const userConversions = convOverrides
+            .filter((co) => !globalUnitNames.has(co.unitName.toLowerCase()))
+            .map((co) => ({
+              id: co.id,
+              unitName: co.unitName,
+              gramsPerUnit: co.gramsPerUnit,
+              ingredientId: co.ingredientId,
+              isUserOverride: true,
+            }));
+          result.conversions = [...globalConversions, ...userConversions];
+        }
+
+        return result;
+      });
+
+      return { data: mergedData as unknown as Ingredient[], total };
+    }
+
     return { data, total };
   }
 
@@ -78,11 +146,13 @@ export class IngredientService {
   async create(
     data: CreateIngredientDto,
     userId?: number,
+    userRole?: string,
   ): Promise<Ingredient> {
     const trimmed = data.name.trim();
     const normalizedName =
       trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
     const unit = data.unit === "ml" ? "ml" : "g";
+    const isAdmin = !userId || userRole === "ADMIN";
 
     // Buscar ingrediente GLOBAL existente con el mismo nombre
     const existing = await prisma.ingredient.findFirst({
@@ -94,10 +164,15 @@ export class IngredientService {
     });
 
     if (existing) {
+      if (!isAdmin) {
+        // Usuario normal: el ingrediente ya existe globalmente, devolver sin modificar
+        return existing;
+      }
+      // Admin: actualizar datos globales
       return prisma.ingredient.update({
         where: { id: existing.id },
         data: {
-          name: normalizedName, // Update to capitalized version
+          name: normalizedName,
           unit: unit,
           imageUrl: data.imageUrl ?? existing.imageUrl,
           defaultLocation: data.defaultLocation ?? existing.defaultLocation,
@@ -106,12 +181,16 @@ export class IngredientService {
       });
     }
 
+    // Crear nuevo ingrediente
+    // Admin → GLOBAL directamente; Usuario normal → PRIVATE (solo para él)
     const ingredient = await prisma.ingredient.create({
       data: {
         name: normalizedName,
         unit: unit,
         imageUrl: data.imageUrl,
         defaultLocation: data.defaultLocation || null,
+        status: isAdmin ? "GLOBAL" : "PRIVATE",
+        createdByUserId: userId ?? null,
       },
       include: ingredientInclude,
     });
@@ -219,9 +298,63 @@ export class IngredientService {
   async update(
     id: number,
     data: UpdateIngredientDto,
+    userId?: number,
+    userRole?: string,
   ): Promise<Ingredient | null> {
     const ingredient = await prisma.ingredient.findUnique({ where: { id } });
     if (!ingredient) return null;
+
+    // Usuario no-admin editando un ingrediente GLOBAL → guardar en override personal
+    if (userId && userRole !== "ADMIN" && ingredient.status === "GLOBAL") {
+      const overrideData: {
+        imageUrl?: string | null;
+        defaultLocation?: string | null;
+        preferredUnit?: string | null;
+      } = {};
+      if (data.imageUrl !== undefined) overrideData.imageUrl = data.imageUrl;
+      if (data.defaultLocation !== undefined)
+        overrideData.defaultLocation = data.defaultLocation;
+      if (data.preferredUnit !== undefined)
+        overrideData.preferredUnit = data.preferredUnit;
+
+      if (Object.keys(overrideData).length > 0) {
+        await prisma.ingredientUserOverride.upsert({
+          where: { userId_ingredientId: { userId, ingredientId: id } },
+          create: { userId, ingredientId: id, ...overrideData },
+          update: overrideData,
+        });
+      }
+
+      // Devolver el ingrediente con el override aplicado
+      const full = await prisma.ingredient.findUnique({
+        where: { id },
+        include: ingredientInclude,
+      });
+      if (!full) return null;
+      const override = await prisma.ingredientUserOverride.findUnique({
+        where: { userId_ingredientId: { userId, ingredientId: id } },
+      });
+      if (override) {
+        return {
+          ...full,
+          imageUrl:
+            override.imageUrl !== null && override.imageUrl !== undefined
+              ? override.imageUrl
+              : full.imageUrl,
+          defaultLocation:
+            override.defaultLocation !== null &&
+            override.defaultLocation !== undefined
+              ? override.defaultLocation
+              : full.defaultLocation,
+          preferredUnit:
+            override.preferredUnit !== null &&
+            override.preferredUnit !== undefined
+              ? override.preferredUnit
+              : full.preferredUnit,
+        } as unknown as Ingredient;
+      }
+      return full as unknown as Ingredient;
+    }
 
     return prisma.ingredient.update({
       where: { id },
@@ -260,6 +393,20 @@ export class IngredientService {
     return prisma.ingredient.update({
       where: { id },
       data: { status },
+      include: ingredientInclude,
+    });
+  }
+
+  // Proponer un ingrediente PRIVATE al admin (cambia estado a PENDING)
+  // Solo el creador puede proponerlo
+  async propose(id: number, userId: number): Promise<Ingredient | null> {
+    const ingredient = await prisma.ingredient.findUnique({ where: { id } });
+    if (!ingredient) return null;
+    if (ingredient.createdByUserId !== userId) return null; // no es el creador
+    if (ingredient.status !== "PRIVATE") return null; // ya está pendiente o global
+    return prisma.ingredient.update({
+      where: { id },
+      data: { status: "PENDING" },
       include: ingredientInclude,
     });
   }
@@ -399,7 +546,41 @@ export class IngredientService {
   async addConversion(
     ingredientId: number,
     data: CreateUnitConversionDto,
+    userId?: number,
+    userRole?: string,
   ): Promise<UnitConversion> {
+    // Usuario no-admin añadiendo a ingrediente GLOBAL → override personal
+    if (userId && userRole !== "ADMIN") {
+      const ingredient = await prisma.ingredient.findUnique({
+        where: { id: ingredientId },
+      });
+      if (ingredient && ingredient.status === "GLOBAL") {
+        const override = await prisma.ingredientConversionUserOverride.upsert({
+          where: {
+            userId_ingredientId_unitName: {
+              userId,
+              ingredientId,
+              unitName: data.unitName.toLowerCase(),
+            },
+          },
+          create: {
+            userId,
+            ingredientId,
+            unitName: data.unitName.toLowerCase(),
+            gramsPerUnit: data.gramsPerUnit,
+          },
+          update: { gramsPerUnit: data.gramsPerUnit },
+        });
+        return {
+          id: override.id,
+          unitName: override.unitName,
+          gramsPerUnit: override.gramsPerUnit,
+          ingredientId: override.ingredientId,
+          isUserOverride: true,
+        };
+      }
+    }
+
     const existing = await prisma.unitConversion.findUnique({
       where: {
         ingredientId_unitName: {
@@ -423,6 +604,20 @@ export class IngredientService {
         ingredientId,
       },
     });
+  }
+
+  async deleteConversionOverride(
+    overrideId: number,
+    userId: number,
+  ): Promise<boolean> {
+    const existing = await prisma.ingredientConversionUserOverride.findFirst({
+      where: { id: overrideId, userId },
+    });
+    if (!existing) return false;
+    await prisma.ingredientConversionUserOverride.delete({
+      where: { id: overrideId },
+    });
+    return true;
   }
 
   async updateConversion(
@@ -454,6 +649,32 @@ export class IngredientService {
     return prisma.unitConversion.findMany({
       where: { ingredientId },
     });
+  }
+
+  // Devuelve conversiones globales + overrides personales del usuario (con isUserOverride=true)
+  async getConversionsForUser(
+    ingredientId: number,
+    userId: number,
+  ): Promise<UnitConversion[]> {
+    const [global, userOverrides] = await Promise.all([
+      prisma.unitConversion.findMany({ where: { ingredientId } }),
+      prisma.ingredientConversionUserOverride.findMany({
+        where: { ingredientId, userId },
+      }),
+    ]);
+    const globalUnitNames = new Set(
+      global.map((c) => c.unitName.toLowerCase()),
+    );
+    const userConversions = userOverrides
+      .filter((co) => !globalUnitNames.has(co.unitName.toLowerCase()))
+      .map((co) => ({
+        id: co.id,
+        unitName: co.unitName,
+        gramsPerUnit: co.gramsPerUnit,
+        ingredientId: co.ingredientId,
+        isUserOverride: true as const,
+      }));
+    return [...global, ...userConversions];
   }
 
   // --- Nutrition calculation ---

@@ -3,6 +3,7 @@ export interface UnitConversion {
   unitName: string;
   gramsPerUnit: number;
   ingredientId: number;
+  isUserOverride?: boolean; // true = conversión personal del usuario, no global
 }
 
 export interface IngredientVariant {

@@ -110,6 +110,7 @@ export class IngredientController {
   @Post("/")
   @HttpCode(201)
   async create(
+    @Req() req: AuthRequest,
     @Body()
     body: {
       name: string;
@@ -170,13 +171,17 @@ export class IngredientController {
       ];
     }
 
-    return ingredientService.create({
-      name,
-      unit: (unit as "g" | "ml") || "g",
-      imageUrl,
-      defaultLocation,
-      variants: finalVariants,
-    });
+    return ingredientService.create(
+      {
+        name,
+        unit: (unit as "g" | "ml") || "g",
+        imageUrl,
+        defaultLocation,
+        variants: finalVariants,
+      },
+      req.userId,
+      req.userRole,
+    );
   }
 
   /**
@@ -223,11 +228,12 @@ export class IngredientController {
    * /api/ingredients/{id}:
    *   put:
    *     tags: [Ingredientes]
-   *     summary: Actualizar ingrediente
+   *     summary: Actualizar ingrediente (admin → global; usuario → override personal)
    */
   @Put("/:id")
   async update(
     @Param("id") id: number,
+    @Req() req: AuthRequest,
     @Body()
     body: {
       name?: string;
@@ -238,12 +244,12 @@ export class IngredientController {
   ) {
     const { name, imageUrl, preferredUnit, defaultLocation } = body;
 
-    const ingredient = await ingredientService.update(id, {
-      name,
-      imageUrl,
-      preferredUnit,
-      defaultLocation,
-    });
+    const ingredient = await ingredientService.update(
+      id,
+      { name, imageUrl, preferredUnit, defaultLocation },
+      req.userId,
+      req.userRole,
+    );
 
     if (!ingredient) {
       throw { httpCode: 404, message: "Ingrediente no encontrado" };
@@ -398,10 +404,16 @@ export class IngredientController {
    * /api/ingredients/{id}/conversions:
    *   get:
    *     tags: [Conversiones]
-   *     summary: Listar conversiones de un ingrediente
+   *     summary: Listar conversiones (globales + personales del usuario autenticado)
    */
   @Get("/:id/conversions")
-  async getConversions(@Param("id") ingredientId: number) {
+  async getConversions(
+    @Param("id") ingredientId: number,
+    @Req() req: AuthRequest,
+  ) {
+    if (req.userId) {
+      return ingredientService.getConversionsForUser(ingredientId, req.userId);
+    }
     return ingredientService.getConversions(ingredientId);
   }
 
@@ -410,12 +422,13 @@ export class IngredientController {
    * /api/ingredients/{id}/conversions:
    *   post:
    *     tags: [Conversiones]
-   *     summary: Añadir conversión de unidad a un ingrediente
+   *     summary: Añadir conversión (admin → global; usuario → override personal)
    */
   @Post("/:id/conversions")
   @HttpCode(201)
   async addConversion(
     @Param("id") ingredientId: number,
+    @Req() req: AuthRequest,
     @Body() body: { unitName: string; gramsPerUnit: number },
   ) {
     const { unitName, gramsPerUnit } = body;
@@ -439,10 +452,45 @@ export class IngredientController {
       throw { httpCode: 404, message: "Ingrediente no encontrado" };
     }
 
-    return ingredientService.addConversion(ingredientId, {
-      unitName,
-      gramsPerUnit,
-    });
+    return ingredientService.addConversion(
+      ingredientId,
+      { unitName, gramsPerUnit },
+      req.userId,
+      req.userRole,
+    );
+  }
+
+  /**
+   * @swagger
+   * /api/ingredients/conversion-overrides/{id}:
+   *   delete:
+   *     tags: [Conversiones]
+   *     summary: Eliminar override personal de conversión del usuario
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema: { type: integer }
+   *     responses:
+   *       204:
+   *         description: Override eliminado
+   *       404:
+   *         description: Override no encontrado
+   */
+  @Delete("/conversion-overrides/:id")
+  @HttpCode(204)
+  async deleteConversionOverride(
+    @Param("id") overrideId: number,
+    @Req() req: AuthRequest,
+  ) {
+    const deleted = await ingredientService.deleteConversionOverride(
+      overrideId,
+      req.userId!,
+    );
+    if (!deleted) {
+      throw { httpCode: 404, message: "Override de conversión no encontrado" };
+    }
+    return null;
   }
 
   /**
@@ -576,6 +624,36 @@ export class IngredientController {
   }
 
   // ===================== ADMIN: actualizar globalmente =====================
+
+  /**
+   * @swagger
+   * /api/ingredients/{id}/propose:
+   *   patch:
+   *     tags: [Ingredientes]
+   *     summary: Proponer un ingrediente PRIVATE al admin (cambia a PENDING)
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema: { type: integer }
+   *     responses:
+   *       200:
+   *         description: Ingrediente en estado PENDING
+   *       403:
+   *         description: No eres el creador o el ingrediente no está en estado PRIVATE
+   */
+  @Patch("/:id/propose")
+  async propose(@Param("id") id: number, @Req() req: AuthRequest) {
+    const result = await ingredientService.propose(id, req.userId!);
+    if (!result) {
+      throw {
+        httpCode: 403,
+        message:
+          "No puedes proponer este ingrediente (no eres el creador o ya está propuesto)",
+      };
+    }
+    return result;
+  }
 
   /**
    * @swagger
