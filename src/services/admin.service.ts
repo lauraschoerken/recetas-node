@@ -53,7 +53,22 @@ export class AdminService {
       where: { status: "PENDING" },
       include: {
         createdBy: { select: { id: true, name: true, email: true } },
-        variants: true,
+        variants: {
+          select: {
+            id: true,
+            name: true,
+            calories: true,
+            protein: true,
+            carbs: true,
+            fat: true,
+            fiber: true,
+            weightFactor: true,
+            isDefault: true,
+          },
+        },
+        conversions: {
+          select: { id: true, unitName: true, gramsPerUnit: true },
+        },
       },
       orderBy: { id: "desc" },
     });

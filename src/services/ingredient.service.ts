@@ -356,6 +356,53 @@ export class IngredientService {
       return full as unknown as Ingredient;
     }
 
+    // Admin editando un ingrediente PENDING → preservar valores originales del
+    // creador como UserOverride para que no los pierda al convertirse en GLOBAL
+    if (
+      userRole === "ADMIN" &&
+      ingredient.status === "PENDING" &&
+      ingredient.createdByUserId
+    ) {
+      const creatorId = ingredient.createdByUserId;
+      const preserve: {
+        imageUrl?: string | null;
+        defaultLocation?: string | null;
+        preferredUnit?: string | null;
+      } = {};
+
+      if (
+        data.imageUrl !== undefined &&
+        data.imageUrl !== ingredient.imageUrl &&
+        ingredient.imageUrl
+      ) {
+        preserve.imageUrl = ingredient.imageUrl;
+      }
+      if (
+        data.defaultLocation !== undefined &&
+        data.defaultLocation !== ingredient.defaultLocation &&
+        ingredient.defaultLocation
+      ) {
+        preserve.defaultLocation = ingredient.defaultLocation;
+      }
+      if (
+        data.preferredUnit !== undefined &&
+        data.preferredUnit !== ingredient.preferredUnit &&
+        ingredient.preferredUnit
+      ) {
+        preserve.preferredUnit = ingredient.preferredUnit;
+      }
+
+      if (Object.keys(preserve).length > 0) {
+        await prisma.ingredientUserOverride.upsert({
+          where: {
+            userId_ingredientId: { userId: creatorId, ingredientId: id },
+          },
+          create: { userId: creatorId, ingredientId: id, ...preserve },
+          update: preserve,
+        });
+      }
+    }
+
     return prisma.ingredient.update({
       where: { id },
       data: {
@@ -638,8 +685,38 @@ export class IngredientService {
   async deleteConversion(conversionId: number): Promise<boolean> {
     const conversion = await prisma.unitConversion.findUnique({
       where: { id: conversionId },
+      include: {
+        ingredient: { select: { status: true, createdByUserId: true } },
+      },
     });
     if (!conversion) return false;
+
+    // Si el ingrediente es PENDING y tiene creador, preservar la conversión
+    // como ConversionUserOverride para que el creador no la pierda al aprobar
+    const ing = (
+      conversion as typeof conversion & {
+        ingredient: { status: string; createdByUserId: number | null };
+      }
+    ).ingredient;
+    if (ing.status === "PENDING" && ing.createdByUserId) {
+      const existing = await prisma.ingredientConversionUserOverride.findFirst({
+        where: {
+          ingredientId: conversion.ingredientId,
+          userId: ing.createdByUserId,
+          unitName: conversion.unitName,
+        },
+      });
+      if (!existing) {
+        await prisma.ingredientConversionUserOverride.create({
+          data: {
+            ingredientId: conversion.ingredientId,
+            userId: ing.createdByUserId,
+            unitName: conversion.unitName,
+            gramsPerUnit: conversion.gramsPerUnit,
+          },
+        });
+      }
+    }
 
     await prisma.unitConversion.delete({ where: { id: conversionId } });
     return true;
