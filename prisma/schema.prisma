@@ -494,6 +494,7 @@ model UserStoreIngredient {
   ingredientId  Int
   purchaseUrl   String?
   preferredUnit String?
+  sortOrder     Int?
   store         UserStore  @relation(fields: [storeId], references: [id], onDelete: Cascade)
   ingredient    Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
 

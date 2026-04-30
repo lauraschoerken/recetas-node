@@ -152,6 +152,7 @@ export class UserStoreController {
       ingredientId: number;
       purchaseUrl?: string;
       preferredUnit?: string;
+      sortOrder?: number | null;
     },
   ) {
     if (!body.ingredientId)

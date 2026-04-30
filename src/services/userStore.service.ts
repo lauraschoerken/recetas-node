@@ -74,6 +74,7 @@ export class UserStoreService {
       ingredientId: number;
       purchaseUrl?: string;
       preferredUnit?: string;
+      sortOrder?: number | null;
     },
   ) {
     const store = await prisma.userStore.findFirst({
@@ -88,6 +89,7 @@ export class UserStoreService {
       update: {
         purchaseUrl: data.purchaseUrl,
         preferredUnit: data.preferredUnit,
+        sortOrder: data.sortOrder,
       },
       include: { ingredient: true },
     });
