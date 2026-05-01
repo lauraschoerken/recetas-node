@@ -78,13 +78,39 @@ export class RecipeController {
     @QueryParam("search") search?: string,
     @QueryParam("visibility") visibility?: string,
     @QueryParam("ingredient") ingredient?: string,
+    @QueryParam("difficulty") difficulty?: string,
+    @QueryParam("minCookTime") minCookTime?: number,
+    @QueryParam("maxCookTime") maxCookTime?: number,
+    @QueryParam("tagIds") tagIds?: string,
+    @QueryParam("excludeTagIds") excludeTagIds?: string,
+    @QueryParam("sortBy") sortBy?: string,
+    @QueryParam("sortOrder") sortOrder?: string,
   ) {
+    const parsedTagIds = tagIds
+      ? tagIds
+          .split(",")
+          .map(Number)
+          .filter((n) => !isNaN(n) && n > 0)
+      : [];
+    const parsedExcludeTagIds = excludeTagIds
+      ? excludeTagIds
+          .split(",")
+          .map(Number)
+          .filter((n) => !isNaN(n) && n > 0)
+      : [];
     return recipeService.getAll(req.userId!, {
       page,
       pageSize,
       search,
       visibility,
       ingredient,
+      difficulty,
+      minCookTime,
+      maxCookTime,
+      tagIds: parsedTagIds,
+      excludeTagIds: parsedExcludeTagIds,
+      sortBy,
+      sortOrder,
     });
   }
 

@@ -14,6 +14,9 @@ const recipeInclude = {
         include: {
           conversions: true,
           variants: true,
+          tagAssignments: {
+            include: { tag: true },
+          },
         },
       },
       variant: true,
@@ -84,6 +87,13 @@ export class RecipeService {
       search?: string;
       visibility?: string;
       ingredient?: string;
+      difficulty?: string;
+      minCookTime?: number;
+      maxCookTime?: number;
+      tagIds?: number[];
+      excludeTagIds?: number[];
+      sortBy?: string;
+      sortOrder?: string;
     } = {},
   ): Promise<{ data: RecipeWithComponents[]; total: number }> {
     const {
@@ -92,6 +102,13 @@ export class RecipeService {
       search = "",
       visibility = "all",
       ingredient = "",
+      difficulty = "",
+      minCookTime,
+      maxCookTime,
+      tagIds = [],
+      excludeTagIds = [],
+      sortBy = "createdAt",
+      sortOrder = "desc",
     } = opts;
 
     // Filtro de visibilidad
@@ -105,6 +122,18 @@ export class RecipeService {
     } else {
       visibilityFilter = { OR: [{ userId }, { isPublic: true }] };
     }
+
+    // Ordenación
+    const allowedSortFields = [
+      "createdAt",
+      "title",
+      "cookTimeMinutes",
+      "difficulty",
+    ];
+    const safeSortBy = allowedSortFields.includes(sortBy)
+      ? sortBy
+      : "createdAt";
+    const safeSortOrder = sortOrder === "asc" ? "asc" : "desc";
 
     const where = {
       AND: [
@@ -128,13 +157,65 @@ export class RecipeService {
               },
             ]
           : []),
+        ...(difficulty
+          ? [
+              {
+                difficulty: {
+                  equals: difficulty,
+                  mode: "insensitive" as const,
+                },
+              },
+            ]
+          : []),
+        ...(minCookTime != null
+          ? [{ cookTimeMinutes: { gte: minCookTime } }]
+          : []),
+        ...(maxCookTime != null
+          ? [{ cookTimeMinutes: { lte: maxCookTime } }]
+          : []),
+        ...(tagIds.length > 0
+          ? [
+              {
+                ingredients: {
+                  some: {
+                    ingredient: {
+                      tagAssignments: {
+                        some: {
+                          tagId: { in: tagIds },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            ]
+          : []),
+        ...(excludeTagIds.length > 0
+          ? [
+              {
+                NOT: {
+                  ingredients: {
+                    some: {
+                      ingredient: {
+                        tagAssignments: {
+                          some: {
+                            tagId: { in: excludeTagIds },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            ]
+          : []),
       ],
     };
     const [recipes, total] = await prisma.$transaction([
       prisma.recipe.findMany({
         where,
         include: recipeInclude,
-        orderBy: { createdAt: "desc" },
+        orderBy: { [safeSortBy]: safeSortOrder },
         ...(page && pageSize
           ? { skip: (page - 1) * pageSize, take: pageSize }
           : {}),
@@ -779,6 +860,24 @@ export class RecipeService {
             fiber: Math.round((nutrition.fiber / servings) * 10) / 10,
           }
         : null,
+      tags: (() => {
+        const tagMap = new Map<
+          number,
+          { id: number; name: string; color: string | null }
+        >();
+        for (const ri of recipe.ingredients || []) {
+          for (const ta of ri.ingredient.tagAssignments || []) {
+            if (!tagMap.has(ta.tag.id)) {
+              tagMap.set(ta.tag.id, {
+                id: ta.tag.id,
+                name: ta.tag.name,
+                color: ta.tag.color ?? null,
+              });
+            }
+          }
+        }
+        return Array.from(tagMap.values());
+      })(),
       ingredients: (recipe.ingredients || []).map((ri: any) => ({
         id: ri.ingredient.id,
         name: ri.ingredient.name,

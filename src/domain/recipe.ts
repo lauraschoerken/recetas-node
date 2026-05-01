@@ -48,6 +48,7 @@ export interface RecipeNutrition {
 export interface RecipeWithComponents extends Recipe {
   ingredients: IngredientWithQuantity[];
   components: RecipeComponent[];
+  tags?: { id: number; name: string; color: string | null }[];
   authorName?: string;
   totalCalories?: number | null;
   caloriesPerServing?: number | null;
