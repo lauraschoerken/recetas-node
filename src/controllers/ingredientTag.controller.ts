@@ -6,6 +6,7 @@ import {
   Delete,
   Param,
   Body,
+  QueryParam,
   Req,
   UseBefore,
   HttpCode,
@@ -114,6 +115,36 @@ export class IngredientTagController {
   }
 
   // ===== Asignaciones de tags a ingredientes =====
+
+  /**
+   * @swagger
+   * /api/ingredient-tags/bulk:
+   *   get:
+   *     tags: [Tags]
+   *     summary: Obtener tags de varios ingredientes a la vez
+   *     parameters:
+   *       - in: query
+   *         name: ids
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: IDs separados por coma (ej. "1,2,3")
+   *     responses:
+   *       200:
+   *         description: Mapa ingredientId → lista de tags
+   */
+  @Get("/bulk")
+  async getBulkAssignments(
+    @QueryParam("ids") ids: string,
+    @Req() req: AuthRequest,
+  ) {
+    if (!ids) return {};
+    const ingredientIds = ids
+      .split(",")
+      .map(Number)
+      .filter((n) => !isNaN(n) && n > 0);
+    return ingredientTagService.getBulkAssignments(ingredientIds, req.userId!);
+  }
 
   /**
    * @swagger

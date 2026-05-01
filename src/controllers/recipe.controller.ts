@@ -8,9 +8,11 @@ import {
   Body,
   QueryParam,
   Req,
+  Res,
   UseBefore,
   HttpCode,
 } from "routing-controllers";
+import { Response } from "express";
 import { recipeService } from "../services";
 import { authMiddleware, AuthRequest } from "../middlewares";
 import { CreateRecipeDto, UpdateRecipeDto } from "../domain";
@@ -85,6 +87,7 @@ export class RecipeController {
     @QueryParam("excludeTagIds") excludeTagIds?: string,
     @QueryParam("sortBy") sortBy?: string,
     @QueryParam("sortOrder") sortOrder?: string,
+    @QueryParam("author") author?: number,
   ) {
     const parsedTagIds = tagIds
       ? tagIds
@@ -111,7 +114,23 @@ export class RecipeController {
       excludeTagIds: parsedExcludeTagIds,
       sortBy,
       sortOrder,
+      authorId: author,
     });
+  }
+
+  /**
+   * @swagger
+   * /api/recipes/authors:
+   *   get:
+   *     tags: [Recetas]
+   *     summary: Obtener autores con recetas visibles
+   *     responses:
+   *       200:
+   *         description: Lista de autores
+   */
+  @Get("/authors")
+  async getAuthors(@Req() req: AuthRequest) {
+    return recipeService.getAuthors(req.userId!);
   }
 
   /**
@@ -260,5 +279,72 @@ export class RecipeController {
     }
 
     return null;
+  }
+
+  /**
+   * @swagger
+   * /api/recipes/export/csv:
+   *   get:
+   *     tags: [Recetas]
+   *     summary: Exportar varias recetas como CSV
+   *     parameters:
+   *       - in: query
+   *         name: ids
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: IDs separados por coma
+   *     responses:
+   *       200:
+   *         description: Archivo CSV
+   *         content:
+   *           text/csv:
+   *             schema:
+   *               type: string
+   *       400:
+   *         description: ids requerido
+   */
+  @Get("/export/csv")
+  async exportCsv(
+    @QueryParam("ids") ids: string,
+    @Req() req: AuthRequest,
+    @Res() res: Response,
+  ) {
+    if (!ids) throw { httpCode: 400, message: "ids es requerido" };
+    const idList = ids
+      .split(",")
+      .map(Number)
+      .filter((n) => !isNaN(n) && n > 0);
+    const csv = await recipeService.exportCsv(idList, req.userId!);
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="recetas.csv"');
+    res.send(csv);
+    return res;
+  }
+
+  /**
+   * @swagger
+   * /api/recipes/import/csv:
+   *   post:
+   *     tags: [Recetas]
+   *     summary: Importar recetas desde CSV
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [csv]
+   *             properties:
+   *               csv:
+   *                 type: string
+   *     responses:
+   *       200:
+   *         description: Resultado de la importación
+   */
+  @Post("/import/csv")
+  async importCsv(@Body() body: { csv: string }, @Req() req: AuthRequest) {
+    if (!body.csv) throw { httpCode: 400, message: "csv es requerido" };
+    return recipeService.importFromCsv(body.csv, req.userId!);
   }
 }

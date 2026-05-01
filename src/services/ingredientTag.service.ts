@@ -140,6 +140,52 @@ export class IngredientTagService {
     await prisma.ingredientTagHidden.delete({ where: { id: existing.id } });
     return true;
   }
+
+  /** Obtener tags de varios ingredientes a la vez (para exportar lista de compra) */
+  async getBulkAssignments(
+    ingredientIds: number[],
+    userId: number,
+  ): Promise<
+    Record<string, { id: number; name: string; color: string | null }[]>
+  > {
+    if (ingredientIds.length === 0) return {};
+
+    const hiddenRows = await prisma.ingredientTagHidden.findMany({
+      where: { userId, ingredientId: { in: ingredientIds } },
+      select: { tagId: true, ingredientId: true },
+    });
+    const hiddenMap: Record<number, Set<number>> = {};
+    for (const h of hiddenRows) {
+      if (!hiddenMap[h.ingredientId]) hiddenMap[h.ingredientId] = new Set();
+      hiddenMap[h.ingredientId].add(h.tagId);
+    }
+
+    const assignments = await prisma.ingredientTagAssignment.findMany({
+      where: {
+        ingredientId: { in: ingredientIds },
+        OR: [{ userId: null }, { userId }],
+      },
+      include: { tag: true },
+    });
+
+    const result: Record<
+      string,
+      { id: number; name: string; color: string | null }[]
+    > = {};
+    for (const a of assignments) {
+      if (hiddenMap[a.ingredientId]?.has(a.tagId)) continue;
+      const key = String(a.ingredientId);
+      if (!result[key]) result[key] = [];
+      if (!result[key].find((t) => t.id === a.tag.id)) {
+        result[key].push({
+          id: a.tag.id,
+          name: a.tag.name,
+          color: a.tag.color,
+        });
+      }
+    }
+    return result;
+  }
 }
 
 export const ingredientTagService = new IngredientTagService();

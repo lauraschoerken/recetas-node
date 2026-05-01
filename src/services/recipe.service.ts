@@ -94,6 +94,7 @@ export class RecipeService {
       excludeTagIds?: number[];
       sortBy?: string;
       sortOrder?: string;
+      authorId?: number;
     } = {},
   ): Promise<{ data: RecipeWithComponents[]; total: number }> {
     const {
@@ -109,6 +110,7 @@ export class RecipeService {
       excludeTagIds = [],
       sortBy = "createdAt",
       sortOrder = "desc",
+      authorId,
     } = opts;
 
     // Filtro de visibilidad
@@ -209,6 +211,7 @@ export class RecipeService {
               },
             ]
           : []),
+        ...(authorId != null ? [{ userId: authorId }] : []),
       ],
     };
     const [recipes, total] = await prisma.$transaction([
@@ -223,6 +226,19 @@ export class RecipeService {
       prisma.recipe.count({ where }),
     ]);
     return { data: recipes.map((r) => this.mapRecipe(r, r.user.name)), total };
+  }
+
+  async getAuthors(userId: number): Promise<{ id: number; name: string }[]> {
+    const users = await prisma.user.findMany({
+      where: {
+        recipes: {
+          some: { OR: [{ userId }, { isPublic: true }] },
+        },
+      },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    });
+    return users;
   }
 
   async getById(
@@ -956,6 +972,241 @@ export class RecipeService {
         })),
       })),
     };
+  }
+
+  // ──────── CSV Export / Import ────────
+
+  private csvField(v: string | null | undefined): string {
+    const s = v == null ? "" : String(v);
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+
+  async exportCsv(ids: number[], userId: number): Promise<string> {
+    const headers = [
+      "title",
+      "description",
+      "instructions",
+      "servings",
+      "cookTimeMinutes",
+      "difficulty",
+      "isPublic",
+      "defaultLocation",
+      "customCalories",
+      "customProtein",
+      "customCarbs",
+      "customFat",
+      "customFiber",
+      "ingredients",
+      "components",
+    ].join(",");
+
+    const rows: string[] = [headers];
+
+    for (const id of ids) {
+      const recipe = await this.getById(id, userId);
+      if (!recipe) continue;
+
+      const ing = (recipe.ingredients || []).map((i: any) => ({
+        name: i.name,
+        quantity: i.quantity,
+        unit: i.unit,
+      }));
+
+      const comps = (recipe.components || []).map((c: any) => ({
+        name: c.name,
+        sortOrder: c.sortOrder,
+        isOptional: c.isOptional,
+        defaultEnabled: c.defaultEnabled,
+        options: c.options.map((o: any) => ({
+          name: o.name,
+          isDefault: o.isDefault,
+          ingredientName: o.ingredient?.name ?? null,
+          recipeId: o.recipeId ?? null,
+          quantity: o.quantity ?? null,
+          unit: o.unit ?? null,
+          recipeServings: o.recipeServings ?? null,
+        })),
+      }));
+
+      const fields = [
+        this.csvField(recipe.title),
+        this.csvField(recipe.description),
+        this.csvField(recipe.instructions),
+        String(recipe.servings ?? 4),
+        String(recipe.cookTimeMinutes ?? ""),
+        this.csvField(recipe.difficulty),
+        String(recipe.isPublic),
+        this.csvField(recipe.defaultLocation),
+        String(recipe.customCalories ?? ""),
+        String(recipe.customProtein ?? ""),
+        String(recipe.customCarbs ?? ""),
+        String(recipe.customFat ?? ""),
+        String(recipe.customFiber ?? ""),
+        this.csvField(JSON.stringify(ing)),
+        this.csvField(JSON.stringify(comps)),
+      ];
+
+      rows.push(fields.join(","));
+    }
+
+    return rows.join("\n");
+  }
+
+  private parseCsv(content: string): string[][] {
+    const rows: string[][] = [];
+    let i = 0;
+    const n = content.length;
+
+    while (i < n) {
+      const row: string[] = [];
+
+      while (i < n) {
+        if (content[i] === '"') {
+          i++; // skip opening quote
+          let value = "";
+          while (i < n) {
+            if (content[i] === '"') {
+              if (content[i + 1] === '"') {
+                value += '"';
+                i += 2;
+              } else {
+                i++; // skip closing quote
+                break;
+              }
+            } else {
+              value += content[i];
+              i++;
+            }
+          }
+          row.push(value);
+        } else {
+          let value = "";
+          while (
+            i < n &&
+            content[i] !== "," &&
+            content[i] !== "\n" &&
+            content[i] !== "\r"
+          ) {
+            value += content[i];
+            i++;
+          }
+          row.push(value);
+        }
+
+        if (i < n && content[i] === ",") {
+          i++;
+        } else {
+          break;
+        }
+      }
+
+      if (i < n && content[i] === "\r") i++;
+      if (i < n && content[i] === "\n") i++;
+
+      if (row.length > 0) rows.push(row);
+    }
+
+    return rows;
+  }
+
+  async importFromCsv(
+    csvContent: string,
+    userId: number,
+  ): Promise<{
+    importedCount: number;
+    skipped: { title: string; id: number }[];
+  }> {
+    const rows = this.parseCsv(csvContent);
+    if (rows.length < 2) return { importedCount: 0, skipped: [] };
+
+    // Fila 0 = cabeceras, saltar
+    const dataRows = rows.slice(1);
+    let importedCount = 0;
+    const skipped: { title: string; id: number }[] = [];
+
+    for (const row of dataRows) {
+      if (row.length < 15) continue;
+      const [
+        title,
+        description,
+        instructions,
+        servingsStr,
+        cookTimeStr,
+        difficulty,
+        isPublicStr,
+        defaultLocation,
+        customCalStr,
+        customProtStr,
+        customCarbsStr,
+        customFatStr,
+        customFiberStr,
+        ingredientsJson,
+        componentsJson,
+      ] = row;
+
+      if (!title) continue;
+
+      // Comprobar duplicado por título
+      const existing = await prisma.recipe.findFirst({
+        where: { title, userId },
+        select: { id: true },
+      });
+      if (existing) {
+        skipped.push({ title, id: existing.id });
+        continue;
+      }
+
+      let ingredients: any[] = [];
+      let components: any[] = [];
+      try {
+        ingredients = ingredientsJson ? JSON.parse(ingredientsJson) : [];
+        components = componentsJson ? JSON.parse(componentsJson) : [];
+      } catch {
+        ingredients = [];
+        components = [];
+      }
+
+      const dto: CreateRecipeDto = {
+        title,
+        description: description || undefined,
+        instructions: instructions || undefined,
+        servings: parseInt(servingsStr) || 4,
+        cookTimeMinutes: cookTimeStr ? parseInt(cookTimeStr) : undefined,
+        difficulty: difficulty || undefined,
+        isPublic: isPublicStr === "true",
+        defaultLocation: defaultLocation || null,
+        ingredients: ingredients.map((i: any) => ({
+          name: i.name,
+          quantity: Number(i.quantity) || 0,
+          unit: i.unit || "g",
+        })),
+        components: components.map((c: any) => ({
+          name: c.name,
+          sortOrder: c.sortOrder,
+          isOptional: c.isOptional,
+          defaultEnabled: c.defaultEnabled,
+          options: (c.options || []).map((o: any) => ({
+            name: o.name,
+            isDefault: o.isDefault,
+            ingredientName: o.ingredientName || undefined,
+            recipeId: o.recipeId || undefined,
+            quantity: o.quantity || undefined,
+            unit: o.unit || undefined,
+            recipeServings: o.recipeServings || undefined,
+          })),
+        })),
+        ...(customCalStr ? { customCalories: parseFloat(customCalStr) } : {}),
+        ...(customProtStr ? { customProtein: parseFloat(customProtStr) } : {}),
+        ...(customCarbsStr ? { customCarbs: parseFloat(customCarbsStr) } : {}),
+        ...(customFatStr ? { customFat: parseFloat(customFatStr) } : {}),
+        ...(customFiberStr ? { customFiber: parseFloat(customFiberStr) } : {}),
+      } as any;
+
+      await this.create(dto, userId);
+      importedCount++;
+    }
+
+    return { importedCount, skipped };
   }
 }
 

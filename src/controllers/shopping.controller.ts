@@ -8,9 +8,12 @@ import {
   Body,
   QueryParam,
   Req,
+  Res,
   UseBefore,
   HttpCode,
 } from "routing-controllers";
+import { Response } from "express";
+import PDFDocument from "pdfkit";
 import { shoppingService, homeItemService } from "../services";
 import { authMiddleware, AuthRequest } from "../middlewares";
 
@@ -486,5 +489,106 @@ export class ShoppingController {
       }
     }
     return { results };
+  }
+
+  /**
+   * @swagger
+   * /api/shopping-list/export/pdf:
+   *   post:
+   *     tags: [Lista de Compra]
+   *     summary: Exportar lista de la compra como PDF
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [items]
+   *             properties:
+   *               items:
+   *                 type: array
+   *                 items:
+   *                   type: object
+   *                   properties:
+   *                     name: { type: string }
+   *                     quantityToBuy: { type: number }
+   *                     unit: { type: string }
+   *               weekLabel:
+   *                 type: string
+   *     responses:
+   *       200:
+   *         description: PDF generado
+   *         content:
+   *           application/pdf:
+   *             schema:
+   *               type: string
+   *               format: binary
+   *       400:
+   *         description: No hay items
+   */
+  @Post("/shopping-list/export/pdf")
+  async exportShoppingListPdf(
+    @Body()
+    body: {
+      items: { name: string; quantityToBuy: number; unit: string }[];
+      weekLabel?: string;
+    },
+    @Req() req: AuthRequest,
+    @Res() res: Response,
+  ) {
+    if (!body.items || body.items.length === 0) {
+      throw { httpCode: 400, message: "No hay items para exportar" };
+    }
+
+    const doc = new PDFDocument({ margin: 50, size: "A4" });
+    const chunks: Buffer[] = [];
+    doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+
+    await new Promise<void>((resolve, reject) => {
+      doc.on("end", resolve);
+      doc.on("error", reject);
+
+      doc
+        .fontSize(20)
+        .font("Helvetica-Bold")
+        .text("Lista de la Compra", { align: "center" });
+
+      if (body.weekLabel) {
+        doc
+          .moveDown(0.4)
+          .fontSize(11)
+          .font("Helvetica")
+          .fillColor("#666666")
+          .text(body.weekLabel, { align: "center" });
+      }
+
+      doc
+        .moveDown(0.8)
+        .moveTo(50, doc.y)
+        .lineTo(545, doc.y)
+        .strokeColor("#dddddd")
+        .stroke()
+        .moveDown(0.6);
+
+      doc.fontSize(12).font("Helvetica").fillColor("#000000");
+      for (const item of body.items) {
+        const qty =
+          item.quantityToBuy % 1 === 0
+            ? String(item.quantityToBuy)
+            : item.quantityToBuy.toFixed(1);
+        doc.text(`\u2022  ${item.name}: ${qty} ${item.unit}`, { indent: 10 });
+      }
+
+      doc.end();
+    });
+
+    const pdfBuffer = Buffer.concat(chunks);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      'attachment; filename="lista-compra.pdf"',
+    );
+    res.send(pdfBuffer);
+    return res;
   }
 }
