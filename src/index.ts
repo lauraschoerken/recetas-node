@@ -19,6 +19,7 @@ import { HouseholdController } from "./controllers/household.controller";
 import { AlertController } from "./controllers/alert.controller";
 import { BackupController } from "./controllers/backup.controller";
 import { PdfController } from "./controllers/pdf.controller";
+import { ProductController } from "./controllers/product.controller";
 
 dotenv.config();
 
@@ -49,6 +50,7 @@ useExpressServer(app, {
     AlertController,
     BackupController,
     PdfController,
+    ProductController,
   ],
   defaultErrorHandler: false,
 });
