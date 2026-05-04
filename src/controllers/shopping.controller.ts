@@ -397,6 +397,52 @@ export class ShoppingController {
 
   /**
    * @swagger
+   * /api/shopping-list/add-product:
+   *   post:
+   *     tags: [Lista de Compra]
+   *     summary: Añadir un producto a la lista de la compra
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [productId, quantity, unit]
+   *             properties:
+   *               productId:
+   *                 type: integer
+   *               quantity:
+   *                 type: number
+   *               unit:
+   *                 type: string
+   *     responses:
+   *       201:
+   *         description: Producto añadido
+   *       400:
+   *         description: Datos inválidos
+   */
+  @Post("/shopping-list/add-product")
+  @HttpCode(201)
+  async addProductToShoppingList(
+    @Body() body: { productId: number; quantity: number; unit: string },
+    @Req() req: AuthRequest,
+  ) {
+    if (!body.productId || !body.quantity || !body.unit) {
+      throw {
+        httpCode: 400,
+        message: "productId, quantity y unit son requeridos",
+      };
+    }
+    return shoppingService.addProductItem(
+      body.productId,
+      body.quantity,
+      body.unit,
+      req.userId!,
+    );
+  }
+
+  /**
+   * @swagger
    * /api/shopping-list/mark-purchased:
    *   post:
    *     tags: [Lista de Compra]

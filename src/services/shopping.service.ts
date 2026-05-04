@@ -1058,6 +1058,49 @@ export class ShoppingService {
     return { added };
   }
 
+  async addProductItem(
+    productId: number,
+    quantity: number,
+    unit: string,
+    userId: number,
+  ): Promise<{ added: number }> {
+    const sharing = await this.getSharingContext(userId);
+    const shoppingOwnerFilter =
+      sharing.shareShopping && sharing.householdId
+        ? { householdId: sharing.householdId }
+        : { userId };
+
+    const existing = await prisma.shoppingItem.findFirst({
+      where: {
+        ...shoppingOwnerFilter,
+        productId,
+        weekPlanId: null,
+        purchased: false,
+      },
+    });
+
+    if (existing) {
+      await prisma.shoppingItem.update({
+        where: { id: existing.id },
+        data: { quantity: existing.quantity + quantity },
+      });
+    } else {
+      await prisma.shoppingItem.create({
+        data: {
+          userId,
+          productId,
+          quantity,
+          unit,
+          ...(sharing.shareShopping && sharing.householdId
+            ? { householdId: sharing.householdId }
+            : {}),
+        },
+      });
+    }
+
+    return { added: 1 };
+  }
+
   // Convertir cantidad a unidad base (g o ml)
   private convertToBaseUnit(
     quantity: number,

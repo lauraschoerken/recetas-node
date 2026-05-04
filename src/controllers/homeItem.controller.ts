@@ -106,6 +106,7 @@ export class HomeItemController {
       recipeId?: number;
       ingredientName?: string;
       variantId?: number;
+      productId?: number;
     },
     @Req() req: AuthRequest,
   ) {
@@ -119,26 +120,17 @@ export class HomeItemController {
       recipeId,
       ingredientName,
       variantId,
+      productId,
     } = body;
-
-    console.log("Create home item:", {
-      location,
-      quantity,
-      unit,
-      recipeId,
-      ingredientId,
-      ingredientName,
-      variantId,
-    });
 
     if (!location || quantity === undefined || !unit) {
       throw { httpCode: 400, message: "Faltan campos requeridos" };
     }
 
-    if (!ingredientId && !recipeId && !ingredientName) {
+    if (!ingredientId && !recipeId && !ingredientName && !productId) {
       throw {
         httpCode: 400,
-        message: "Debe especificar un ingrediente o una receta",
+        message: "Debe especificar un ingrediente, receta o producto",
       };
     }
 
@@ -151,6 +143,7 @@ export class HomeItemController {
       recipeId: recipeId || undefined,
       ingredientName,
       variantId,
+      productId,
     });
   }
 

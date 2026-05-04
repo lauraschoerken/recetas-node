@@ -21,6 +21,9 @@ const homeItemInclude = {
   variant: {
     select: { id: true, name: true, weightFactor: true },
   },
+  product: {
+    select: { id: true, name: true },
+  },
 };
 
 export interface HomeItemWithPlanned {
@@ -32,9 +35,11 @@ export interface HomeItemWithPlanned {
   expiresAt?: Date | null;
   ingredientId?: number | null;
   variantId?: number | null;
+  productId?: number | null;
   ingredient?: { id: number; name: string } | null;
   recipe?: { id: number; title: string } | null;
   variant?: { id: number; name: string; weightFactor: number } | null;
+  product?: { id: number; name: string } | null;
   plannedMealServings: number;
   pendingPrepServings: number;
   projectedTotal: number;
@@ -455,6 +460,43 @@ export class HomeItemService {
 
   async create(userId: number, data: CreateHomeItemDto): Promise<HomeItem> {
     console.log("Create home item:", JSON.stringify(data, null, 2));
+
+    // Si es un producto, crear directamente sin consolidación
+    if (data.productId) {
+      const householdId = await householdService.getHouseholdId(userId);
+      const household = householdId
+        ? await prisma.household.findUnique({ where: { id: householdId } })
+        : null;
+
+      const item = await prisma.homeItem.create({
+        data: {
+          location: data.location,
+          quantity: data.quantity,
+          unit: data.unit,
+          expiresAt: data.expiresAt
+            ? new Date(data.expiresAt + "T12:00:00")
+            : null,
+          userId,
+          productId: data.productId,
+          ...(household?.shareHome ? { householdId } : {}),
+        },
+        include: homeItemInclude,
+      });
+
+      await prisma.homeItemHistory.create({
+        data: {
+          action: "ADDED",
+          quantity: data.quantity,
+          unit: data.unit,
+          origin: "MANUAL",
+          userId,
+          homeItemId: item.id,
+        },
+      });
+
+      return item as unknown as HomeItem;
+    }
+
     let ingredientId = data.ingredientId;
 
     if (!ingredientId && !data.recipeId && data.ingredientName) {

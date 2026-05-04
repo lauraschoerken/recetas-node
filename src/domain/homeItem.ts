@@ -1,4 +1,4 @@
-export type HomeLocation = 'nevera' | 'congelador' | 'despensa';
+export type HomeLocation = "nevera" | "congelador" | "despensa";
 
 export interface HomeItem {
   id: number;
@@ -11,6 +11,7 @@ export interface HomeItem {
   ingredientId?: number | null;
   recipeId?: number | null;
   variantId?: number | null;
+  productId?: number | null;
   ingredient?: {
     id: number;
     name: string;
@@ -24,6 +25,10 @@ export interface HomeItem {
     name: string;
     weightFactor: number;
   } | null;
+  product?: {
+    id: number;
+    name: string;
+  } | null;
 }
 
 export interface CreateHomeItemDto {
@@ -35,11 +40,12 @@ export interface CreateHomeItemDto {
   recipeId?: number;
   ingredientName?: string;
   variantId?: number;
+  productId?: number;
 }
 
 export interface CookIngredientDto {
   targetVariantId: number;
-  quantity?: number;  // Si no se especifica, cocina todo
+  quantity?: number; // Si no se especifica, cocina todo
   targetLocation?: HomeLocation;
 }
 
