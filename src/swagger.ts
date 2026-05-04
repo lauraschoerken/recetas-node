@@ -348,6 +348,44 @@ const options: swaggerJsdoc.Options = {
             },
           },
         },
+        Product: {
+          type: "object",
+          properties: {
+            id: { type: "integer" },
+            name: { type: "string" },
+            imageUrl: { type: "string", nullable: true },
+            status: { type: "string", enum: ["GLOBAL", "PRIVATE"] },
+            createdByUserId: { type: "integer", nullable: true },
+            createdAt: { type: "string", format: "date-time" },
+          },
+        },
+        CreateProduct: {
+          type: "object",
+          required: ["name"],
+          properties: {
+            name: { type: "string", example: "Leche entera" },
+            imageUrl: { type: "string", nullable: true },
+            isGlobal: { type: "boolean", example: false },
+          },
+        },
+        UpdateProduct: {
+          type: "object",
+          properties: {
+            name: { type: "string" },
+            imageUrl: { type: "string", nullable: true },
+          },
+        },
+        ProductThreshold: {
+          type: "object",
+          properties: {
+            id: { type: "integer" },
+            productId: { type: "integer" },
+            minQuantity: { type: "number" },
+            unit: { type: "string" },
+            userId: { type: "integer", nullable: true },
+            householdId: { type: "integer", nullable: true },
+          },
+        },
       },
     },
     security: [{ bearerAuth: [] }],
@@ -383,6 +421,10 @@ const options: swaggerJsdoc.Options = {
         description: "Exportación e importación de recetas en PDF",
       },
       { name: "Backup", description: "Exportación e importación de datos" },
+      {
+        name: "Productos",
+        description: "Gestión de productos (no ingredientes de receta)",
+      },
     ],
   },
   apis: ["./src/controllers/*.ts"],

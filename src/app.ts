@@ -17,6 +17,7 @@ import { AlertController } from "./controllers/alert.controller";
 import { BackupController } from "./controllers/backup.controller";
 import { PdfController } from "./controllers/pdf.controller";
 import { TestController } from "./controllers/test.controller";
+import { ProductController } from "./controllers/product.controller";
 
 export function createApp() {
   const app = express();
@@ -41,6 +42,7 @@ export function createApp() {
     AlertController,
     BackupController,
     PdfController,
+    ProductController,
   ];
 
   // Agregar TestController solo en entorno de test

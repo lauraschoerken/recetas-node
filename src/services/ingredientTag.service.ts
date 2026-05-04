@@ -3,23 +3,39 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 export class IngredientTagService {
+  /** Normaliza nombre para comparación de duplicados */
+  private normalizeName(name: string): string {
+    return name.trim().toLowerCase();
+  }
+
   /**
    * Devuelve todas las tags visibles para un usuario:
-   * - Tags globales (isGlobal = true) que el usuario no ha ocultado
+   * - Tags globales (isGlobal = true) que el usuario no ha ocultado globalmente
    * - Tags personales del propio usuario
+   * Aplica color override si existe en IngredientTagUserPreference
    */
   async getAll(userId: number) {
-    const hiddenTagIds = await prisma.ingredientTagHidden
-      .findMany({ where: { userId }, select: { tagId: true } })
-      .then((rows) => rows.map((r) => r.tagId));
+    // Obtener preferencias del usuario (colores personalizados y ocultos globales)
+    const userPrefs = await prisma.ingredientTagUserPreference.findMany({
+      where: { userId },
+    });
+    const prefMap = new Map(userPrefs.map((p) => [p.tagId, p]));
 
-    return prisma.ingredientTag.findMany({
+    // IDs de tags globalmente ocultos para este usuario
+    const globallyHiddenTagIds = userPrefs
+      .filter((p) => p.isHiddenGlobally)
+      .map((p) => p.tagId);
+
+    const tags = await prisma.ingredientTag.findMany({
       where: {
         OR: [
-          // Tags globales no ocultadas
+          // Tags globales no ocultadas globalmente
           {
             isGlobal: true,
-            id: hiddenTagIds.length > 0 ? { notIn: hiddenTagIds } : undefined,
+            id:
+              globallyHiddenTagIds.length > 0
+                ? { notIn: globallyHiddenTagIds }
+                : undefined,
           },
           // Tags personales del usuario
           { createdByUserId: userId },
@@ -27,11 +43,34 @@ export class IngredientTagService {
       },
       orderBy: [{ isGlobal: "desc" }, { name: "asc" }],
     });
+
+    // Aplicar color override y añadir campos de preferencia
+    return tags.map((tag) => {
+      const pref = prefMap.get(tag.id);
+      return {
+        ...tag,
+        color: pref?.colorOverride ?? tag.color,
+        colorOverride: pref?.colorOverride ?? null,
+        isHiddenGlobally: pref?.isHiddenGlobally ?? false,
+      };
+    });
   }
 
   async create(userId: number, name: string, color?: string, isGlobal = false) {
+    const normalized = this.normalizeName(name);
+    if (!normalized) throw { httpCode: 400, message: "Nombre es requerido" };
+
+    // Validar duplicado: buscar tag con mismo nombre (normalizado) visible para este usuario
+    const visibleTags = await this.getAll(userId);
+    const duplicate = visibleTags.find(
+      (t) => this.normalizeName(t.name) === normalized,
+    );
+    if (duplicate) {
+      throw { httpCode: 409, message: "Ya tienes un tag con ese nombre" };
+    }
+
     return prisma.ingredientTag.create({
-      data: { name, color, isGlobal, createdByUserId: userId },
+      data: { name: name.trim(), color, isGlobal, createdByUserId: userId },
     });
   }
 
@@ -43,9 +82,51 @@ export class IngredientTagService {
   ) {
     const tag = await prisma.ingredientTag.findUnique({ where: { id: tagId } });
     if (!tag) return null;
-    // Solo el creador o admin puede editar
+    // Solo el creador o admin puede editar el tag global
     if (tag.createdByUserId !== userId && userRole !== "ADMIN") return null;
+
+    // Validar duplicado si se está cambiando el nombre
+    if (data.name) {
+      const normalized = this.normalizeName(data.name);
+      const visibleTags = await this.getAll(userId);
+      const duplicate = visibleTags.find(
+        (t) => t.id !== tagId && this.normalizeName(t.name) === normalized,
+      );
+      if (duplicate) {
+        throw { httpCode: 409, message: "Ya tienes un tag con ese nombre" };
+      }
+      data = { ...data, name: data.name.trim() };
+    }
+
     return prisma.ingredientTag.update({ where: { id: tagId }, data });
+  }
+
+  /** Guardar preferencias personales del usuario sobre un tag global (color override, ocultar globalmente) */
+  async saveUserPreference(
+    userId: number,
+    tagId: number,
+    data: { colorOverride?: string | null; isHiddenGlobally?: boolean },
+  ) {
+    const tag = await prisma.ingredientTag.findUnique({ where: { id: tagId } });
+    if (!tag) throw { httpCode: 404, message: "Tag no encontrada" };
+
+    return prisma.ingredientTagUserPreference.upsert({
+      where: { userId_tagId: { userId, tagId } },
+      create: {
+        userId,
+        tagId,
+        colorOverride: data.colorOverride ?? null,
+        isHiddenGlobally: data.isHiddenGlobally ?? false,
+      },
+      update: {
+        ...(data.colorOverride !== undefined
+          ? { colorOverride: data.colorOverride }
+          : {}),
+        ...(data.isHiddenGlobally !== undefined
+          ? { isHiddenGlobally: data.isHiddenGlobally }
+          : {}),
+      },
+    });
   }
 
   async delete(tagId: number, userId: number, userRole: string) {
@@ -150,6 +231,15 @@ export class IngredientTagService {
   > {
     if (ingredientIds.length === 0) return {};
 
+    // Preferencias del usuario para aplicar color override
+    const userPrefs = await prisma.ingredientTagUserPreference.findMany({
+      where: { userId },
+    });
+    const prefMap = new Map(userPrefs.map((p) => [p.tagId, p]));
+    const globallyHiddenTagIds = new Set(
+      userPrefs.filter((p) => p.isHiddenGlobally).map((p) => p.tagId),
+    );
+
     const hiddenRows = await prisma.ingredientTagHidden.findMany({
       where: { userId, ingredientId: { in: ingredientIds } },
       select: { tagId: true, ingredientId: true },
@@ -174,13 +264,15 @@ export class IngredientTagService {
     > = {};
     for (const a of assignments) {
       if (hiddenMap[a.ingredientId]?.has(a.tagId)) continue;
+      if (globallyHiddenTagIds.has(a.tagId)) continue;
       const key = String(a.ingredientId);
       if (!result[key]) result[key] = [];
       if (!result[key].find((t) => t.id === a.tag.id)) {
+        const pref = prefMap.get(a.tag.id);
         result[key].push({
           id: a.tag.id,
           name: a.tag.name,
-          color: a.tag.color,
+          color: pref?.colorOverride ?? a.tag.color,
         });
       }
     }

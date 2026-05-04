@@ -16,6 +16,9 @@ export const backupService = {
       shoppingItems,
       thresholdsIng,
       thresholdsRec,
+      tagUserPreferences,
+      products,
+      productThresholds,
     ] = await Promise.all([
       prisma.user.findUnique({
         where: { id: userId },
@@ -69,6 +72,17 @@ export const backupService = {
       prisma.recipeMinThreshold.findMany({
         where: householdId ? { householdId } : { userId },
         include: { recipe: true },
+      }),
+      prisma.ingredientTagUserPreference.findMany({
+        where: { userId },
+        include: { tag: { select: { name: true } } },
+      }),
+      prisma.product.findMany({
+        where: { createdByUserId: userId, status: "PRIVATE" },
+      }),
+      prisma.productMinThreshold.findMany({
+        where: { userId },
+        include: { product: { select: { name: true } } },
       }),
     ]);
 
@@ -167,12 +181,14 @@ export const backupService = {
           ingredientName: hi.ingredient?.name ?? null,
           recipeTitle: hi.recipe?.title ?? null,
         })),
-        shoppingItems: shoppingItems.map((si) => ({
-          quantity: si.quantity,
-          unit: si.unit,
-          purchased: si.purchased,
-          ingredientName: si.ingredient.name,
-        })),
+        shoppingItems: shoppingItems
+          .filter((si) => si.ingredient)
+          .map((si) => ({
+            quantity: si.quantity,
+            unit: si.unit,
+            purchased: si.purchased,
+            ingredientName: si.ingredient!.name,
+          })),
         thresholds: {
           ingredients: thresholdsIng.map((t) => ({
             ingredientName: t.ingredient.name,
@@ -184,6 +200,20 @@ export const backupService = {
             minServings: t.minServings,
           })),
         },
+        tagUserPreferences: tagUserPreferences.map((p) => ({
+          tagName: p.tag.name,
+          colorOverride: p.colorOverride,
+          isHiddenGlobally: p.isHiddenGlobally,
+        })),
+        products: products.map((p) => ({
+          name: p.name,
+          imageUrl: p.imageUrl,
+        })),
+        productThresholds: productThresholds.map((t) => ({
+          productName: t.product.name,
+          minQuantity: t.minQuantity,
+          unit: t.unit,
+        })),
       },
     };
   },
@@ -724,6 +754,128 @@ export const backupService = {
         }
         results.recipeThresholds = { created, skipped, updated: 0 };
       }
+    }
+
+    // Import tag user preferences
+    if (data.tagUserPreferences) {
+      let created = 0,
+        skipped = 0,
+        updated = 0;
+      for (const pref of data.tagUserPreferences) {
+        const tag = await prisma.ingredientTag.findFirst({
+          where: { name: pref.tagName },
+        });
+        if (!tag) {
+          skipped++;
+          continue;
+        }
+        const existing = await prisma.ingredientTagUserPreference.findUnique({
+          where: { userId_tagId: { userId, tagId: tag.id } },
+        });
+        if (existing) {
+          if (mode === "overwrite") {
+            await prisma.ingredientTagUserPreference.update({
+              where: { id: existing.id },
+              data: {
+                colorOverride: pref.colorOverride,
+                isHiddenGlobally: pref.isHiddenGlobally,
+              },
+            });
+            updated++;
+          } else {
+            skipped++;
+          }
+        } else {
+          await prisma.ingredientTagUserPreference.create({
+            data: {
+              userId,
+              tagId: tag.id,
+              colorOverride: pref.colorOverride,
+              isHiddenGlobally: pref.isHiddenGlobally ?? false,
+            },
+          });
+          created++;
+        }
+      }
+      results.tagUserPreferences = { created, skipped, updated };
+    }
+
+    // Import private products
+    if (data.products) {
+      let created = 0,
+        skipped = 0,
+        updated = 0;
+      for (const prod of data.products) {
+        const existing = await prisma.product.findFirst({
+          where: {
+            name: { equals: prod.name, mode: "insensitive" },
+            createdByUserId: userId,
+          },
+        });
+        if (existing) {
+          if (mode === "overwrite") {
+            await prisma.product.update({
+              where: { id: existing.id },
+              data: { imageUrl: prod.imageUrl },
+            });
+            updated++;
+          } else {
+            skipped++;
+          }
+        } else {
+          await prisma.product.create({
+            data: {
+              name: prod.name,
+              imageUrl: prod.imageUrl ?? null,
+              status: "PRIVATE",
+              createdByUserId: userId,
+            },
+          });
+          created++;
+        }
+      }
+      results.products = { created, skipped, updated };
+    }
+
+    // Import product thresholds
+    if (data.productThresholds) {
+      let created = 0,
+        skipped = 0;
+      for (const t of data.productThresholds) {
+        const product = await prisma.product.findFirst({
+          where: {
+            name: { equals: t.productName, mode: "insensitive" },
+            OR: [{ status: "GLOBAL" }, { createdByUserId: userId }],
+          },
+        });
+        if (!product) {
+          skipped++;
+          continue;
+        }
+        const existing = await prisma.productMinThreshold.findUnique({
+          where: { productId_userId: { productId: product.id, userId } },
+        });
+        if (existing) {
+          if (mode === "overwrite") {
+            await prisma.productMinThreshold.update({
+              where: { id: existing.id },
+              data: { minQuantity: t.minQuantity, unit: t.unit },
+            });
+          }
+          skipped++;
+        } else {
+          await prisma.productMinThreshold.create({
+            data: {
+              productId: product.id,
+              userId,
+              minQuantity: t.minQuantity,
+              unit: t.unit,
+            },
+          });
+          created++;
+        }
+      }
+      results.productThresholds = { created, skipped, updated: 0 };
     }
 
     return { mode, results };
@@ -2228,13 +2380,15 @@ export const backupService = {
           })),
         })),
 
-        shoppingItems: shoppingItems.map((si) => ({
-          userEmail: si.user.email,
-          ingredientName: si.ingredient.name,
-          quantity: si.quantity,
-          unit: si.unit,
-          purchased: si.purchased,
-        })),
+        shoppingItems: shoppingItems
+          .filter((si) => si.ingredient)
+          .map((si) => ({
+            userEmail: si.user.email,
+            ingredientName: si.ingredient!.name,
+            quantity: si.quantity,
+            unit: si.unit,
+            purchased: si.purchased,
+          })),
 
         thresholds: {
           ingredients: thresholdsIng.map((t) => ({

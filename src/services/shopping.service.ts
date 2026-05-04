@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+﻿import { PrismaClient } from "@prisma/client";
 import {
   ShoppingItem,
   WeekPlanWithDetails,
@@ -697,8 +697,8 @@ export class ShoppingService {
 
   async generateShoppingList(
     userId: number,
-    startDate: Date,
-    endDate: Date,
+    startDate?: Date,
+    endDate?: Date,
   ): Promise<ShoppingItem[]> {
     const sharing = await this.getSharingContext(userId);
     const planUserIds = sharing.shareShopping
@@ -709,30 +709,36 @@ export class ShoppingService {
         ? { householdId: sharing.householdId, ingredientId: { not: null } }
         : { userId, ingredientId: { not: null } };
 
-    // Los ingredientes se necesitan para los PREP pendientes (preparaciones que hay que cocinar)
-    // Los MEAL consumen recetas ya preparadas del inventario, no ingredientes directamente
+    // Si no se pasan fechas, mostrar todo desde hoy en adelante (sin lÃ­mite)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const dateFilter =
+      startDate && endDate ? { gte: startDate, lte: endDate } : { gte: today };
+
+    // Los ingredientes se necesitan para los PREP pendientes (preparaciones sin cocinar)
+    // Los MEAL consumen recetas ya preparadas del inventario, no ingredientes directos
     const preps = await prisma.weekPlan.findMany({
       where: {
         userId: { in: planUserIds },
-        plannedDate: { gte: startDate, lte: endDate },
+        plannedDate: dateFilter,
         type: "prep",
         cooked: false,
       },
       include: this.weekPlanInclude,
     });
 
-    // También incluir meals que NO tienen receta preparada en casa (necesitan ingredientes directos)
+    // TambiÃ©n incluir meals que NO tienen receta preparada en casa
     const meals = await prisma.weekPlan.findMany({
       where: {
         userId: { in: planUserIds },
-        plannedDate: { gte: startDate, lte: endDate },
+        plannedDate: dateFilter,
         type: "meal",
         cooked: false,
       },
       include: this.weekPlanInclude,
     });
 
-    // Obtener recetas preparadas en casa para saber cuáles meals no necesitan ingredientes
+    // Obtener recetas preparadas en casa para saber cuÃ¡les meals no necesitan ingredientes
     const homeRecipes = await prisma.homeItem.findMany({
       where:
         sharing.shareHome && sharing.householdId
@@ -756,7 +762,7 @@ export class ShoppingService {
       }
     }
 
-    // Los meals que necesitan más raciones de las que hay preparadas, necesitan ingredientes
+    // Los meals que necesitan mÃ¡s raciones de las que hay preparadas, necesitan ingredientes
     // para las raciones faltantes (si no hay un prep que las cubra)
     const mealsNeedingIngredients: typeof meals = [];
     for (const meal of meals) {
@@ -778,7 +784,7 @@ export class ShoppingService {
       }
     }
 
-    // Añadir también entradas directas de ingrediente (sin receta)
+    // AÃ±adir tambiÃ©n entradas directas de ingrediente (sin receta)
     const ingredientOnlyPlans = meals.filter(
       (m) => !!m.ingredientId && !m.recipeId,
     );
@@ -835,7 +841,7 @@ export class ShoppingService {
         );
 
         // 2. Obtener el weightFactor del estado del ingrediente en la receta
-        // Usar 'variant' (estado especificado en receta) - si está "Cocinado" (wf=3), 100g cocinado = 33g crudo
+        // Usar 'variant' (estado especificado en receta) - si estÃ¡ "Cocinado" (wf=3), 100g cocinado = 33g crudo
         const variantWeightFactor = (ri as any).variant?.weightFactor || 1;
         const rawEquivalent = quantityInGrams / variantWeightFactor;
 
@@ -888,7 +894,7 @@ export class ShoppingService {
             selectedOption.ingredient,
           );
 
-          // Obtener weightFactor del estado de la opción
+          // Obtener weightFactor del estado de la opciÃ³n
           const variantWeightFactor =
             (selectedOption as any).variant?.weightFactor || 1;
           const rawEquivalent = quantityInGrams / variantWeightFactor;
@@ -924,7 +930,7 @@ export class ShoppingService {
       }
     }
 
-    // Calcular qué comprar (en equivalente crudo - lo que realmente compras)
+    // Calcular quÃ© comprar (en equivalente crudo - lo que realmente compras)
     const result: ShoppingItem[] = [];
     for (const [
       ingredientId,
@@ -969,7 +975,7 @@ export class ShoppingService {
       .filter((item) => item.quantityToBuy > 0)
       .sort((a, b) => a.name.localeCompare(b.name));
 
-    // También incluir items manuales de la lista de compra (añadidos desde alertas, etc.)
+    // TambiÃ©n incluir items manuales de la lista de compra (aÃ±adidos desde alertas, etc.)
     const manualItems = await prisma.shoppingItem.findMany({
       where: {
         ...(sharing.shareShopping && sharing.householdId
@@ -990,7 +996,7 @@ export class ShoppingService {
       if (existing) {
         existing.totalQuantity += item.quantity;
         existing.quantityToBuy += item.quantity;
-      } else {
+      } else if (item.ingredientId && item.ingredient) {
         resultList.push({
           ingredientId: item.ingredientId,
           name: item.ingredient.name,
@@ -1061,12 +1067,12 @@ export class ShoppingService {
     const baseUnit = ingredient.unit; // 'g' o 'ml'
     const u = usedUnit.toLowerCase();
 
-    // Ya está en unidad base
+    // Ya estÃ¡ en unidad base
     if (u === baseUnit || u === "g" || u === "ml") {
       return quantity;
     }
 
-    // Conversiones estándar
+    // Conversiones estÃ¡ndar
     if (u === "kg" || u === "l") {
       return quantity * 1000;
     }
@@ -1080,7 +1086,7 @@ export class ShoppingService {
       return quantity * conversion.gramsPerUnit;
     }
 
-    // Si no hay conversión, asumir que ya está en unidad base
+    // Si no hay conversiÃ³n, asumir que ya estÃ¡ en unidad base
     return quantity;
   }
 

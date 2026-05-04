@@ -97,6 +97,46 @@ export class IngredientTagController {
 
   /**
    * @swagger
+   * /api/ingredient-tags/{id}/user-preference:
+   *   put:
+   *     tags: [Tags]
+   *     summary: Guardar preferencias personales del usuario para un tag global (color override, ocultar globalmente)
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema: { type: integer }
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               colorOverride:
+   *                 type: string
+   *                 nullable: true
+   *                 description: Color personalizado (null para quitar el override)
+   *               isHiddenGlobally:
+   *                 type: boolean
+   *                 description: Ocultar este tag en toda la interfaz del usuario
+   *     responses:
+   *       200:
+   *         description: Preferencia guardada
+   *       404:
+   *         description: Tag no encontrada
+   */
+  @Put("/:id/user-preference")
+  async saveUserPreference(
+    @Param("id") id: number,
+    @Req() req: AuthRequest,
+    @Body() body: { colorOverride?: string | null; isHiddenGlobally?: boolean },
+  ) {
+    return ingredientTagService.saveUserPreference(req.userId!, id, body);
+  }
+
+  /**
+   * @swagger
    * /api/ingredient-tags/{id}:
    *   delete:
    *     tags: [Tags]

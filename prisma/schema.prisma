@@ -51,6 +51,11 @@ model User {
   reviewedProposals         IngredientProposal[]              @relation("ProposalReviewer")
   // Tiendas
   stores                    UserStore[]
+  // Preferencias de tags globales
+  tagUserPreferences        IngredientTagUserPreference[]
+  // Productos creados por el usuario
+  createdProducts           Product[]                         @relation("UserCreatedProducts")
+  productMinThresholds      ProductMinThreshold[]
 }
 
 model Recipe {
@@ -237,10 +242,12 @@ model HomeItem {
   ingredientId Int?
   recipeId     Int?
   variantId    Int?
+  productId    Int?               // Nuevo: referencia a un producto
   user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   ingredient   Ingredient?        @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
   recipe       Recipe?            @relation(fields: [recipeId], references: [id], onDelete: Cascade)
   variant      IngredientVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  product      Product?           @relation(fields: [productId], references: [id], onDelete: Cascade)
   householdId  Int?
   household    Household?         @relation(fields: [householdId], references: [id], onDelete: SetNull)
   histories    HomeItemHistory[]
@@ -253,10 +260,12 @@ model ShoppingItem {
   purchased    Boolean     @default(false)
   createdAt    DateTime    @default(now())
   userId       Int
-  ingredientId Int
+  ingredientId Int?        // nullable para soportar productos
+  productId    Int?        // Nuevo: referencia a un producto
   weekPlanId   Int?
   user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  ingredient   Ingredient  @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  ingredient   Ingredient? @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  product      Product?    @relation(fields: [productId], references: [id], onDelete: Cascade)
   weekPlan     WeekPlan?   @relation(fields: [weekPlanId], references: [id], onDelete: Cascade)
   householdId  Int?
   household    Household?  @relation(fields: [householdId], references: [id], onDelete: SetNull)
@@ -422,6 +431,7 @@ model IngredientTag {
   createdBy       User?                     @relation("UserCreatedTags", fields: [createdByUserId], references: [id], onDelete: SetNull)
   assignments     IngredientTagAssignment[]
   hidden          IngredientTagHidden[]
+  userPreferences IngredientTagUserPreference[]
 }
 
 model IngredientTagAssignment {
@@ -486,6 +496,7 @@ model UserStore {
   user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   household   Household?           @relation(fields: [householdId], references: [id], onDelete: SetNull)
   ingredients UserStoreIngredient[]
+  products    UserStoreProduct[]
 }
 
 model UserStoreIngredient {
@@ -499,5 +510,61 @@ model UserStoreIngredient {
   ingredient    Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
 
   @@unique([storeId, ingredientId])
+}
+
+// ── Preferencias personales de tags globales ──
+
+model IngredientTagUserPreference {
+  id               Int           @id @default(autoincrement())
+  userId           Int
+  tagId            Int
+  colorOverride    String?       // Color personalizado que sobreescribe el color global
+  isHiddenGlobally Boolean       @default(false) // Oculta el tag en toda la interfaz del usuario
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tag              IngredientTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tagId])
+}
+
+// ── Productos (entidades de casa no ligadas a recetas) ──
+
+model Product {
+  id              Int                  @id @default(autoincrement())
+  name            String
+  imageUrl        String?
+  status          String               @default("PRIVATE") // "GLOBAL" | "PRIVATE"
+  createdByUserId Int?
+  createdAt       DateTime             @default(now())
+  createdBy       User?                @relation("UserCreatedProducts", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  homeItems       HomeItem[]
+  shoppingItems   ShoppingItem[]
+  minThresholds   ProductMinThreshold[]
+  storeItems      UserStoreProduct[]
+}
+
+model ProductMinThreshold {
+  id          Int       @id @default(autoincrement())
+  minQuantity Float
+  unit        String
+  productId   Int
+  userId      Int?
+  householdId Int?
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user        User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, userId])
+  @@unique([productId, householdId])
+}
+
+model UserStoreProduct {
+  id          Int       @id @default(autoincrement())
+  storeId     Int
+  productId   Int
+  purchaseUrl String?
+  sortOrder   Int?
+  store       UserStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, productId])
 }
 

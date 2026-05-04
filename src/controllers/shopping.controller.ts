@@ -305,16 +305,17 @@ export class ShoppingController {
    *   get:
    *     tags: [Lista de Compra]
    *     summary: Obtener lista de la compra generada del plan semanal
+   *     description: Si no se pasan fechas, devuelve todos los ítems pendientes desde hoy en adelante
    *     parameters:
    *       - in: query
    *         name: startDate
-   *         required: true
+   *         required: false
    *         schema:
    *           type: string
    *           format: date
    *       - in: query
    *         name: endDate
-   *         required: true
+   *         required: false
    *         schema:
    *           type: string
    *           format: date
@@ -327,8 +328,6 @@ export class ShoppingController {
    *               type: array
    *               items:
    *                 $ref: '#/components/schemas/ShoppingItem'
-   *       400:
-   *         description: Fechas requeridas
    */
   @Get("/shopping-list")
   async getShoppingList(
@@ -336,15 +335,10 @@ export class ShoppingController {
     @QueryParam("endDate") endDate: string,
     @Req() req: AuthRequest,
   ) {
-    if (!startDate || !endDate) {
-      throw { httpCode: 400, message: "startDate y endDate son requeridos" };
-    }
+    const start = startDate ? new Date(startDate) : undefined;
+    const end = endDate ? new Date(endDate) : undefined;
 
-    return shoppingService.generateShoppingList(
-      req.userId!,
-      new Date(startDate),
-      new Date(endDate),
-    );
+    return shoppingService.generateShoppingList(req.userId!, start, end);
   }
 
   /**
