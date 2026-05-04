@@ -225,7 +225,33 @@ export class RecipeService {
       }),
       prisma.recipe.count({ where }),
     ]);
-    return { data: recipes.map((r) => this.mapRecipe(r, r.user.name)), total };
+
+    const mapped = recipes.map((r) => this.mapRecipe(r, r.user.name));
+
+    // Aplicar preferencias de usuario sobre tags (color override y ocultas)
+    const allTagIds = Array.from(
+      new Set(mapped.flatMap((r) => (r.tags || []).map((t: any) => t.id))),
+    );
+    if (allTagIds.length > 0) {
+      const userPrefs = await prisma.ingredientTagUserPreference.findMany({
+        where: { userId, tagId: { in: allTagIds } },
+      });
+      const prefMap = new Map(userPrefs.map((p) => [p.tagId, p]));
+      for (const r of mapped) {
+        if (r.tags) {
+          r.tags = r.tags
+            .filter((t: any) => !prefMap.get(t.id)?.isHiddenGlobally)
+            .map((t: any) => {
+              const pref = prefMap.get(t.id);
+              return pref?.colorOverride
+                ? { ...t, color: pref.colorOverride }
+                : t;
+            });
+        }
+      }
+    }
+
+    return { data: mapped, total };
   }
 
   async getAuthors(userId: number): Promise<{ id: number; name: string }[]> {
@@ -256,6 +282,22 @@ export class RecipeService {
     if (!recipe) return null;
 
     const mapped = this.mapRecipe(recipe, recipe.user.name);
+
+    // Aplicar preferencias de usuario sobre tags: color override y filtrar ocultas
+    if (mapped.tags && mapped.tags.length > 0) {
+      const tagIds = mapped.tags.map((t: any) => t.id);
+      const userPrefs = await prisma.ingredientTagUserPreference.findMany({
+        where: { userId, tagId: { in: tagIds } },
+      });
+      const prefMap = new Map(userPrefs.map((p) => [p.tagId, p]));
+      mapped.tags = mapped.tags
+        .filter((t: any) => !prefMap.get(t.id)?.isHiddenGlobally)
+        .map((t: any) => {
+          const pref = prefMap.get(t.id);
+          return pref?.colorOverride ? { ...t, color: pref.colorOverride } : t;
+        });
+    }
+
     return mapped;
   }
 

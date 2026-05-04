@@ -23,13 +23,21 @@ export class IngredientTagController {
    *   get:
    *     tags: [Tags]
    *     summary: Listar tags visibles para el usuario (globales + personales)
+   *     parameters:
+   *       - in: query
+   *         name: includeHidden
+   *         schema: { type: boolean }
+   *         description: Si true, incluye también las tags globales ocultas por el usuario
    *     responses:
    *       200:
    *         description: Lista de tags
    */
   @Get("/")
-  async getAll(@Req() req: AuthRequest) {
-    return ingredientTagService.getAll(req.userId!);
+  async getAll(
+    @Req() req: AuthRequest,
+    @QueryParam("includeHidden") includeHidden?: string,
+  ) {
+    return ingredientTagService.getAll(req.userId!, includeHidden === "true");
   }
 
   /**

@@ -14,7 +14,7 @@ export class IngredientTagService {
    * - Tags personales del propio usuario
    * Aplica color override si existe en IngredientTagUserPreference
    */
-  async getAll(userId: number) {
+  async getAll(userId: number, includeHidden = false) {
     // Obtener preferencias del usuario (colores personalizados y ocultos globales)
     const userPrefs = await prisma.ingredientTagUserPreference.findMany({
       where: { userId },
@@ -29,11 +29,11 @@ export class IngredientTagService {
     const tags = await prisma.ingredientTag.findMany({
       where: {
         OR: [
-          // Tags globales no ocultadas globalmente
+          // Tags globales: si includeHidden=false, excluir las ocultas
           {
             isGlobal: true,
             id:
-              globallyHiddenTagIds.length > 0
+              !includeHidden && globallyHiddenTagIds.length > 0
                 ? { notIn: globallyHiddenTagIds }
                 : undefined,
           },
