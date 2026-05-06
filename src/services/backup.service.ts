@@ -19,6 +19,11 @@ export const backupService = {
       tagUserPreferences,
       products,
       productThresholds,
+      ingredientOverrides,
+      ingredientConversionOverrides,
+      ingredientVariantOverrides,
+      userStores,
+      productOverrides,
     ] = await Promise.all([
       prisma.user.findUnique({
         where: { id: userId },
@@ -59,11 +64,11 @@ export const backupService = {
       }),
       prisma.homeItem.findMany({
         where: householdId ? { householdId } : { userId },
-        include: { ingredient: true, recipe: true },
+        include: { ingredient: true, recipe: true, product: true },
       }),
       prisma.shoppingItem.findMany({
         where: householdId ? { householdId } : { userId },
-        include: { ingredient: true },
+        include: { ingredient: true, product: true },
       }),
       prisma.ingredientMinThreshold.findMany({
         where: householdId ? { householdId } : { userId },
@@ -81,6 +86,31 @@ export const backupService = {
         where: { createdByUserId: userId, status: "PRIVATE" },
       }),
       prisma.productMinThreshold.findMany({
+        where: { userId },
+        include: { product: { select: { name: true } } },
+      }),
+      prisma.ingredientUserOverride.findMany({
+        where: { userId },
+        include: { ingredient: { select: { name: true } } },
+      }),
+      prisma.ingredientConversionUserOverride.findMany({
+        where: { userId },
+        include: { ingredient: { select: { name: true } } },
+      }),
+      prisma.ingredientVariantUserOverride.findMany({
+        where: { userId },
+        include: {
+          variant: { include: { ingredient: { select: { name: true } } } },
+        },
+      }),
+      prisma.userStore.findMany({
+        where: { userId },
+        include: {
+          ingredients: { include: { ingredient: { select: { name: true } } } },
+          products: { include: { product: { select: { name: true } } } },
+        },
+      }),
+      prisma.productUserOverride.findMany({
         where: { userId },
         include: { product: { select: { name: true } } },
       }),
@@ -178,17 +208,30 @@ export const backupService = {
           unit: hi.unit,
           addedAt: hi.addedAt.toISOString(),
           expiresAt: hi.expiresAt?.toISOString() ?? null,
-          ingredientName: hi.ingredient?.name ?? null,
-          recipeTitle: hi.recipe?.title ?? null,
+          ingredientName: (hi as any).ingredient?.name ?? null,
+          recipeTitle: (hi as any).recipe?.title ?? null,
+          productName: (hi as any).product?.name ?? null,
         })),
-        shoppingItems: shoppingItems
-          .filter((si) => si.ingredient)
-          .map((si) => ({
-            quantity: si.quantity,
-            unit: si.unit,
-            purchased: si.purchased,
-            ingredientName: si.ingredient!.name,
-          })),
+        shoppingItems: [
+          ...shoppingItems
+            .filter((si: any) => si.ingredient)
+            .map((si: any) => ({
+              quantity: si.quantity,
+              unit: si.unit,
+              purchased: si.purchased,
+              ingredientName: si.ingredient!.name,
+              productName: null as string | null,
+            })),
+          ...shoppingItems
+            .filter((si: any) => si.product)
+            .map((si: any) => ({
+              quantity: si.quantity,
+              unit: si.unit,
+              purchased: si.purchased,
+              ingredientName: null as string | null,
+              productName: si.product!.name,
+            })),
+        ],
         thresholds: {
           ingredients: thresholdsIng.map((t) => ({
             ingredientName: t.ingredient.name,
@@ -213,6 +256,50 @@ export const backupService = {
           productName: t.product.name,
           minQuantity: t.minQuantity,
           unit: t.unit,
+        })),
+        ingredientOverrides: ingredientOverrides.map((o) => ({
+          ingredientName: o.ingredient.name,
+          preferredUnit: o.preferredUnit,
+          imageUrl: o.imageUrl,
+          defaultLocation: o.defaultLocation,
+          purchaseIsIndifferent: o.purchaseIsIndifferent,
+        })),
+        ingredientConversionOverrides: ingredientConversionOverrides.map((o) => ({
+          ingredientName: o.ingredient.name,
+          unitName: o.unitName,
+          gramsPerUnit: o.gramsPerUnit,
+        })),
+        ingredientVariantOverrides: ingredientVariantOverrides.map((o) => ({
+          ingredientName: o.variant.ingredient.name,
+          variantName: o.variant.name,
+          calories: o.calories,
+          protein: o.protein,
+          carbs: o.carbs,
+          fat: o.fat,
+          fiber: o.fiber,
+          weightFactor: o.weightFactor,
+        })),
+        userStores: userStores.map((s) => ({
+          name: s.name,
+          url: s.url,
+          logoUrl: s.logoUrl,
+          isShared: s.isShared,
+          ingredients: s.ingredients.map((si) => ({
+            ingredientName: si.ingredient.name,
+            purchaseUrl: si.purchaseUrl,
+            preferredUnit: si.preferredUnit,
+            sortOrder: si.sortOrder,
+          })),
+          products: s.products.map((sp) => ({
+            productName: sp.product.name,
+            purchaseUrl: sp.purchaseUrl,
+            sortOrder: sp.sortOrder,
+          })),
+        })),
+        productOverrides: productOverrides.map((o) => ({
+          productName: o.product.name,
+          name: o.name,
+          imageUrl: o.imageUrl,
         })),
       },
     };
@@ -878,6 +965,118 @@ export const backupService = {
       results.productThresholds = { created, skipped, updated: 0 };
     }
 
+    // Import ingredient overrides personales
+    if (data.ingredientOverrides) {
+      let created = 0, skipped = 0, updated = 0;
+      for (const o of data.ingredientOverrides) {
+        const ing = await prisma.ingredient.findFirst({
+          where: { name: o.ingredientName, status: "GLOBAL" },
+        });
+        if (!ing) { skipped++; continue; }
+        const existing = await prisma.ingredientUserOverride.findUnique({
+          where: { userId_ingredientId: { userId, ingredientId: ing.id } },
+        });
+        if (existing) {
+          if (mode === "overwrite") {
+            await prisma.ingredientUserOverride.update({
+              where: { id: existing.id },
+              data: { preferredUnit: o.preferredUnit, imageUrl: o.imageUrl, defaultLocation: o.defaultLocation, purchaseIsIndifferent: o.purchaseIsIndifferent ?? false },
+            });
+            updated++;
+          } else skipped++;
+        } else {
+          await prisma.ingredientUserOverride.create({
+            data: { userId, ingredientId: ing.id, preferredUnit: o.preferredUnit, imageUrl: o.imageUrl, defaultLocation: o.defaultLocation, purchaseIsIndifferent: o.purchaseIsIndifferent ?? false },
+          });
+          created++;
+        }
+      }
+      results.ingredientOverrides = { created, skipped, updated };
+    }
+
+    // Import ingredient conversion overrides
+    if (data.ingredientConversionOverrides) {
+      let created = 0, skipped = 0, updated = 0;
+      for (const o of data.ingredientConversionOverrides) {
+        const ing = await prisma.ingredient.findFirst({
+          where: { name: o.ingredientName, status: "GLOBAL" },
+        });
+        if (!ing) { skipped++; continue; }
+        const existing = await prisma.ingredientConversionUserOverride.findUnique({
+          where: { userId_ingredientId_unitName: { userId, ingredientId: ing.id, unitName: o.unitName } },
+        });
+        if (existing) {
+          if (mode === "overwrite") {
+            await prisma.ingredientConversionUserOverride.update({ where: { id: existing.id }, data: { gramsPerUnit: o.gramsPerUnit } });
+            updated++;
+          } else skipped++;
+        } else {
+          await prisma.ingredientConversionUserOverride.create({ data: { userId, ingredientId: ing.id, unitName: o.unitName, gramsPerUnit: o.gramsPerUnit } });
+          created++;
+        }
+      }
+      results.ingredientConversionOverrides = { created, skipped, updated };
+    }
+
+    // Import user stores
+    if (data.userStores) {
+      let created = 0, skipped = 0, updated = 0;
+      for (const s of data.userStores) {
+        const existing = await prisma.userStore.findFirst({ where: { userId, name: s.name } });
+        let storeId: number;
+        if (existing) {
+          if (mode === "overwrite") {
+            await prisma.userStore.update({ where: { id: existing.id }, data: { url: s.url, logoUrl: s.logoUrl, isShared: s.isShared ?? false } });
+            updated++;
+          } else { skipped++; continue; }
+          storeId = existing.id;
+        } else {
+          const newStore = await prisma.userStore.create({ data: { userId, name: s.name, url: s.url, logoUrl: s.logoUrl, isShared: s.isShared ?? false } });
+          storeId = newStore.id;
+          created++;
+        }
+        for (const si of s.ingredients || []) {
+          const ing = await prisma.ingredient.findFirst({ where: { name: si.ingredientName, status: "GLOBAL" } });
+          if (!ing) continue;
+          await prisma.userStoreIngredient.upsert({
+            where: { storeId_ingredientId: { storeId, ingredientId: ing.id } },
+            create: { storeId, ingredientId: ing.id, purchaseUrl: si.purchaseUrl, preferredUnit: si.preferredUnit, sortOrder: si.sortOrder },
+            update: { purchaseUrl: si.purchaseUrl, preferredUnit: si.preferredUnit, sortOrder: si.sortOrder },
+          });
+        }
+        for (const sp of s.products || []) {
+          const prod = await prisma.product.findFirst({ where: { name: { equals: sp.productName, mode: "insensitive" }, status: "GLOBAL" } });
+          if (!prod) continue;
+          await prisma.userStoreProduct.upsert({
+            where: { storeId_productId: { storeId, productId: prod.id } },
+            create: { storeId, productId: prod.id, purchaseUrl: sp.purchaseUrl, sortOrder: sp.sortOrder },
+            update: { purchaseUrl: sp.purchaseUrl, sortOrder: sp.sortOrder },
+          });
+        }
+      }
+      results.userStores = { created, skipped, updated };
+    }
+
+    // Import product overrides
+    if (data.productOverrides) {
+      let created = 0, skipped = 0, updated = 0;
+      for (const o of data.productOverrides) {
+        const prod = await prisma.product.findFirst({ where: { name: { equals: o.productName, mode: "insensitive" }, status: "GLOBAL" } });
+        if (!prod) { skipped++; continue; }
+        const existing = await prisma.productUserOverride.findUnique({ where: { userId_productId: { userId, productId: prod.id } } });
+        if (existing) {
+          if (mode === "overwrite") {
+            await prisma.productUserOverride.update({ where: { id: existing.id }, data: { name: o.name, imageUrl: o.imageUrl } });
+            updated++;
+          } else skipped++;
+        } else {
+          await prisma.productUserOverride.create({ data: { userId, productId: prod.id, name: o.name, imageUrl: o.imageUrl } });
+          created++;
+        }
+      }
+      results.productOverrides = { created, skipped, updated };
+    }
+
     return { mode, results };
   },
 
@@ -908,7 +1107,10 @@ export const backupService = {
       // Tablas dependientes (hijos primero)
       await prisma.stockAlert.deleteMany();
       await prisma.ingredientProposal.deleteMany();
+      await prisma.productProposal.deleteMany();
+      await prisma.productUserOverride.deleteMany();
       await prisma.userStoreIngredient.deleteMany();
+      await prisma.userStoreProduct.deleteMany();
       await prisma.userStore.deleteMany();
       await prisma.ingredientTagHidden.deleteMany();
       await prisma.ingredientTagAssignment.deleteMany();
@@ -2010,6 +2212,55 @@ export const backupService = {
       results.userStores = { created, skipped, updated };
     }
 
+    // Import product user overrides (admin global backup)
+    if (data.productUserOverrides) {
+      let created = 0, skipped = 0, updated = 0;
+      for (const o of data.productUserOverrides) {
+        const userEntry = emailToId.get(o.userEmail);
+        if (!userEntry) { skipped++; continue; }
+        const prod = await prisma.product.findFirst({ where: { name: { equals: o.productName, mode: "insensitive" } } });
+        if (!prod) { skipped++; continue; }
+        const existing = await prisma.productUserOverride.findUnique({ where: { userId_productId: { userId: userEntry, productId: prod.id } } });
+        if (existing) {
+          if (mode === "overwrite") {
+            await prisma.productUserOverride.update({ where: { id: existing.id }, data: { name: o.name, imageUrl: o.imageUrl } });
+            updated++;
+          } else skipped++;
+        } else {
+          await prisma.productUserOverride.create({ data: { userId: userEntry, productId: prod.id, name: o.name, imageUrl: o.imageUrl } });
+          created++;
+        }
+      }
+      results.productUserOverrides = { created, skipped, updated };
+    }
+
+    // Import product proposals (admin global backup)
+    if (data.productProposals) {
+      let created = 0, skipped = 0;
+      for (const p of data.productProposals) {
+        const proposedByUserId = emailToId.get(p.proposedByEmail);
+        if (!proposedByUserId) { skipped++; continue; }
+        const prod = await prisma.product.findFirst({ where: { name: { equals: p.productName, mode: "insensitive" } } });
+        if (!prod) { skipped++; continue; }
+        await prisma.productProposal.create({
+          data: {
+            type: p.type,
+            status: p.status,
+            proposedByUserId,
+            reviewedByUserId: p.reviewedByEmail ? (emailToId.get(p.reviewedByEmail) ?? null) : null,
+            productId: prod.id,
+            fieldName: p.fieldName,
+            currentValue: p.currentValue,
+            proposedValue: p.proposedValue,
+            adminNote: p.adminNote,
+            createdAt: p.createdAt ? new Date(p.createdAt) : undefined,
+          },
+        });
+        created++;
+      }
+      results.productProposals = { created, skipped, updated: 0 };
+    }
+
     return { mode, results };
   },
 
@@ -2033,6 +2284,10 @@ export const backupService = {
       proposals,
       stores,
       stockAlerts,
+      allProducts,
+      productOverrides,
+      productProposals,
+      productThresholds,
     ] = await Promise.all([
       prisma.user.findMany({
         select: {
@@ -2111,6 +2366,7 @@ export const backupService = {
           user: { select: { email: true } },
           ingredient: { select: { name: true } },
           recipe: { select: { title: true } },
+          product: { select: { name: true } },
           variant: {
             select: { name: true, ingredient: { select: { name: true } } },
           },
@@ -2121,6 +2377,7 @@ export const backupService = {
         include: {
           user: { select: { email: true } },
           ingredient: { select: { name: true } },
+          product: { select: { name: true } },
         },
       }),
       prisma.ingredientMinThreshold.findMany({ include: { ingredient: true } }),
@@ -2177,10 +2434,33 @@ export const backupService = {
         include: {
           user: { select: { email: true } },
           ingredients: { include: { ingredient: { select: { name: true } } } },
+          products: { include: { product: { select: { name: true } } } },
         },
       }),
       prisma.stockAlert.findMany({
         include: {
+          user: { select: { email: true } },
+        },
+      }),
+      prisma.product.findMany({
+        include: { createdBy: { select: { email: true } } },
+      }),
+      prisma.productUserOverride.findMany({
+        include: {
+          user: { select: { email: true } },
+          product: { select: { name: true } },
+        },
+      }),
+      prisma.productProposal.findMany({
+        include: {
+          proposedBy: { select: { email: true } },
+          reviewedBy: { select: { email: true } },
+          product: { select: { name: true } },
+        },
+      }),
+      prisma.productMinThreshold.findMany({
+        include: {
+          product: { select: { name: true } },
           user: { select: { email: true } },
         },
       }),
@@ -2369,7 +2649,8 @@ export const backupService = {
           addedAt: hi.addedAt.toISOString(),
           expiresAt: hi.expiresAt?.toISOString() ?? null,
           ingredientName: hi.ingredient?.name ?? null,
-          recipeTitle: hi.recipe?.title ?? null,
+          recipeTitle: (hi as any).recipe?.title ?? null,
+          productName: (hi as any).product?.name ?? null,
           variantName: hi.variant?.name ?? null,
           histories: hi.histories.map((h) => ({
             action: h.action,
@@ -2380,15 +2661,28 @@ export const backupService = {
           })),
         })),
 
-        shoppingItems: shoppingItems
-          .filter((si) => si.ingredient)
-          .map((si) => ({
-            userEmail: si.user.email,
-            ingredientName: si.ingredient!.name,
-            quantity: si.quantity,
-            unit: si.unit,
-            purchased: si.purchased,
-          })),
+        shoppingItems: [
+          ...shoppingItems
+            .filter((si) => si.ingredient)
+            .map((si) => ({
+              userEmail: si.user.email,
+              ingredientName: si.ingredient!.name,
+              productName: null as string | null,
+              quantity: si.quantity,
+              unit: si.unit,
+              purchased: si.purchased,
+            })),
+          ...shoppingItems
+            .filter((si: any) => si.product)
+            .map((si: any) => ({
+              userEmail: si.user.email,
+              ingredientName: null as string | null,
+              productName: si.product!.name,
+              quantity: si.quantity,
+              unit: si.unit,
+              purchased: si.purchased,
+            })),
+        ],
 
         thresholds: {
           ingredients: thresholdsIng.map((t) => ({
@@ -2457,6 +2751,46 @@ export const backupService = {
             preferredUnit: si.preferredUnit,
             sortOrder: si.sortOrder,
           })),
+          products: (s as any).products?.map((sp: any) => ({
+            productName: sp.product.name,
+            purchaseUrl: sp.purchaseUrl,
+            sortOrder: sp.sortOrder,
+          })) ?? [],
+        })),
+
+        products: allProducts.map((p) => ({
+          name: p.name,
+          imageUrl: p.imageUrl,
+          status: p.status,
+          createdByEmail: (p as any).createdBy?.email ?? null,
+          createdAt: p.createdAt.toISOString(),
+        })),
+
+        productUserOverrides: productOverrides.map((o) => ({
+          userEmail: o.user.email,
+          productName: o.product.name,
+          name: o.name,
+          imageUrl: o.imageUrl,
+        })),
+
+        productProposals: productProposals.map((p) => ({
+          type: p.type,
+          status: p.status,
+          proposedByEmail: p.proposedBy.email,
+          reviewedByEmail: (p as any).reviewedBy?.email ?? null,
+          productName: p.product.name,
+          fieldName: p.fieldName,
+          currentValue: p.currentValue,
+          proposedValue: p.proposedValue,
+          adminNote: p.adminNote,
+          createdAt: p.createdAt.toISOString(),
+        })),
+
+        productThresholds: productThresholds.map((t) => ({
+          productName: t.product.name,
+          userEmail: (t as any).user?.email ?? null,
+          minQuantity: t.minQuantity,
+          unit: t.unit,
         })),
       },
     };

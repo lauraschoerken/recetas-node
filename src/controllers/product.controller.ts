@@ -11,6 +11,7 @@ import {
   UseBefore,
   HttpCode,
 } from "routing-controllers";
+import { adminMiddleware } from "../middlewares";
 import { productService } from "../services/product.service";
 import { authMiddleware, AuthRequest } from "../middlewares";
 
@@ -316,5 +317,220 @@ export class ProductController {
   async deleteThreshold(@Param("id") id: number, @Req() req: AuthRequest) {
     const ok = await productService.deleteThreshold(id, req.userId!);
     return { success: ok };
+  }
+
+  // ── Override personal ─────────────────────────────────────────────────
+
+  /**
+   * @swagger
+   * /api/products/{id}/override:
+   *   get:
+   *     tags: [Productos]
+   *     summary: Obtener override personal del usuario para un producto global
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: integer
+   *     responses:
+   *       200:
+   *         description: Override encontrado o null
+   */
+  @Get("/:id/override")
+  async getOverride(@Param("id") id: number, @Req() req: AuthRequest) {
+    return productService.getOverride(id, req.userId!);
+  }
+
+  /**
+   * @swagger
+   * /api/products/{id}/override:
+   *   put:
+   *     tags: [Productos]
+   *     summary: Guardar override personal (nombre/imagen) para un producto global
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: integer
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               name:
+   *                 type: string
+   *               imageUrl:
+   *                 type: string
+   *                 nullable: true
+   *     responses:
+   *       200:
+   *         description: Override guardado
+   */
+  @Put("/:id/override")
+  async upsertOverride(
+    @Param("id") id: number,
+    @Body() body: any,
+    @Req() req: AuthRequest,
+  ) {
+    return productService.upsertOverride(id, req.userId!, {
+      name: body.name,
+      imageUrl: body.imageUrl,
+    });
+  }
+
+  /**
+   * @swagger
+   * /api/products/{id}/override:
+   *   delete:
+   *     tags: [Productos]
+   *     summary: Eliminar override personal de un producto
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: integer
+   *     responses:
+   *       200:
+   *         description: Override eliminado
+   */
+  @Delete("/:id/override")
+  async deleteOverride(@Param("id") id: number, @Req() req: AuthRequest) {
+    const ok = await productService.deleteOverride(id, req.userId!);
+    return { success: ok };
+  }
+
+  // ── Propuestas de cambio ──────────────────────────────────────────────
+
+  /**
+   * @swagger
+   * /api/products/{id}/propose:
+   *   post:
+   *     tags: [Productos]
+   *     summary: Proponer un cambio en un producto global al admin
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: integer
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [fieldName, currentValue, proposedValue]
+   *             properties:
+   *               fieldName:
+   *                 type: string
+   *                 enum: [name, imageUrl]
+   *               currentValue:
+   *                 type: string
+   *               proposedValue:
+   *                 type: string
+   *     responses:
+   *       201:
+   *         description: Propuesta creada
+   *       409:
+   *         description: Ya existe una propuesta pendiente para este campo
+   */
+  @Post("/:id/propose")
+  @HttpCode(201)
+  async propose(
+    @Param("id") id: number,
+    @Body() body: any,
+    @Req() req: AuthRequest,
+  ) {
+    return productService.createProposal(id, req.userId!, {
+      fieldName: body.fieldName,
+      currentValue: body.currentValue,
+      proposedValue: body.proposedValue,
+    });
+  }
+
+  /**
+   * @swagger
+   * /api/products/proposals:
+   *   get:
+   *     tags: [Productos]
+   *     summary: Listar propuestas de cambio (admin ve todas, usuario ve las suyas)
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: status
+   *         schema:
+   *           type: string
+   *           enum: [PENDING, ACCEPTED, REJECTED]
+   *     responses:
+   *       200:
+   *         description: Lista de propuestas
+   */
+  @Get("/proposals")
+  async getProposals(@Req() req: AuthRequest) {
+    return productService.getProposals(req.userId!, (req as any).userRole || "USER");
+  }
+
+  /**
+   * @swagger
+   * /api/products/proposals/{id}/review:
+   *   put:
+   *     tags: [Productos]
+   *     summary: (Admin) Revisar una propuesta de cambio
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: integer
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [decision]
+   *             properties:
+   *               decision:
+   *                 type: string
+   *                 enum: [ACCEPTED, REJECTED]
+   *               adminNote:
+   *                 type: string
+   *     responses:
+   *       200:
+   *         description: Propuesta revisada; si ACCEPTED el producto global se actualiza
+   *       403:
+   *         description: Solo administradores
+   *       404:
+   *         description: Propuesta no encontrada
+   */
+  @Put("/proposals/:id/review")
+  @UseBefore(adminMiddleware)
+  async reviewProposal(
+    @Param("id") id: number,
+    @Body() body: any,
+    @Req() req: AuthRequest,
+  ) {
+    return productService.reviewProposal(
+      id,
+      req.userId!,
+      body.decision,
+      body.adminNote,
+    );
   }
 }

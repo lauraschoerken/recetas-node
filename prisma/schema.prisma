@@ -56,6 +56,10 @@ model User {
   // Productos creados por el usuario
   createdProducts           Product[]                         @relation("UserCreatedProducts")
   productMinThresholds      ProductMinThreshold[]
+  // Overrides y propuestas de productos
+  productOverrides          ProductUserOverride[]
+  submittedProductProposals ProductProposal[]                 @relation("ProductProposalCreator")
+  reviewedProductProposals  ProductProposal[]                 @relation("ProductProposalReviewer")
 }
 
 model Recipe {
@@ -540,6 +544,8 @@ model Product {
   shoppingItems   ShoppingItem[]
   minThresholds   ProductMinThreshold[]
   storeItems      UserStoreProduct[]
+  overrides       ProductUserOverride[]
+  proposals       ProductProposal[]
 }
 
 model ProductMinThreshold {
@@ -566,5 +572,41 @@ model UserStoreProduct {
   product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@unique([storeId, productId])
+}
+
+// ── Overrides personales de productos ──
+
+model ProductUserOverride {
+  id        Int     @id @default(autoincrement())
+  userId    Int
+  productId Int
+  name      String?
+  imageUrl  String?
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+}
+
+// ── Propuestas de cambio en productos (para revisión de admin) ──
+
+model ProductProposal {
+  id               Int      @id @default(autoincrement())
+  // "EDIT_NAME" | "EDIT_IMAGE"
+  type             String
+  // "PENDING" | "ACCEPTED" | "REJECTED"
+  status           String   @default("PENDING")
+  proposedByUserId Int
+  reviewedByUserId Int?
+  productId        Int
+  fieldName        String?  // "name" | "imageUrl"
+  currentValue     String?
+  proposedValue    String?
+  adminNote        String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  proposedBy       User     @relation("ProductProposalCreator", fields: [proposedByUserId], references: [id], onDelete: Cascade)
+  reviewedBy       User?    @relation("ProductProposalReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  product          Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
 }
 

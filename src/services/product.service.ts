@@ -221,6 +221,100 @@ export class ProductService {
     });
     return thresholds;
   }
+
+  // ── Overrides personales ──────────────────────────────────────────────
+
+  async upsertOverride(
+    productId: number,
+    userId: number,
+    data: { name?: string; imageUrl?: string | null },
+  ) {
+    const product = await prisma.product.findFirst({ where: { id: productId } });
+    if (!product) throw { httpCode: 404, message: "Producto no encontrado" };
+    return prisma.productUserOverride.upsert({
+      where: { userId_productId: { userId, productId } },
+      create: { userId, productId, name: data.name ?? null, imageUrl: data.imageUrl ?? null },
+      update: { name: data.name ?? null, imageUrl: data.imageUrl ?? null },
+    });
+  }
+
+  async getOverride(productId: number, userId: number) {
+    return prisma.productUserOverride.findUnique({
+      where: { userId_productId: { userId, productId } },
+    });
+  }
+
+  async deleteOverride(productId: number, userId: number): Promise<boolean> {
+    const deleted = await prisma.productUserOverride.deleteMany({
+      where: { userId, productId },
+    });
+    return deleted.count > 0;
+  }
+
+  // ── Propuestas de cambio ──────────────────────────────────────────────
+
+  async createProposal(
+    productId: number,
+    userId: number,
+    data: { fieldName: "name" | "imageUrl"; currentValue: string; proposedValue: string },
+  ) {
+    const product = await prisma.product.findFirst({ where: { id: productId, status: "GLOBAL" } });
+    if (!product) throw { httpCode: 404, message: "Producto global no encontrado" };
+    const type = data.fieldName === "name" ? "EDIT_NAME" : "EDIT_IMAGE";
+    // Solo una propuesta pendiente por campo y usuario
+    const existing = await prisma.productProposal.findFirst({
+      where: { productId, proposedByUserId: userId, fieldName: data.fieldName, status: "PENDING" },
+    });
+    if (existing) throw { httpCode: 409, message: "Ya tienes una propuesta pendiente para este campo" };
+    return prisma.productProposal.create({
+      data: {
+        type,
+        productId,
+        proposedByUserId: userId,
+        fieldName: data.fieldName,
+        currentValue: data.currentValue,
+        proposedValue: data.proposedValue,
+      },
+    });
+  }
+
+  async getProposals(userId: number, userRole: string) {
+    const where = userRole === "ADMIN" ? {} : { proposedByUserId: userId };
+    return prisma.productProposal.findMany({
+      where,
+      include: {
+        product: { select: { id: true, name: true, imageUrl: true } },
+        proposedBy: { select: { id: true, name: true, email: true } },
+        reviewedBy: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  async reviewProposal(
+    proposalId: number,
+    adminId: number,
+    decision: "ACCEPTED" | "REJECTED",
+    adminNote?: string,
+  ) {
+    const proposal = await prisma.productProposal.findUnique({ where: { id: proposalId } });
+    if (!proposal) throw { httpCode: 404, message: "Propuesta no encontrada" };
+    if (proposal.status !== "PENDING") throw { httpCode: 409, message: "La propuesta ya fue revisada" };
+
+    const updated = await prisma.productProposal.update({
+      where: { id: proposalId },
+      data: { status: decision, reviewedByUserId: adminId, adminNote: adminNote ?? null },
+    });
+
+    // Si se acepta, aplicar el cambio en el producto global
+    if (decision === "ACCEPTED" && proposal.fieldName && proposal.proposedValue) {
+      await prisma.product.update({
+        where: { id: proposal.productId },
+        data: { [proposal.fieldName]: proposal.proposedValue },
+      });
+    }
+    return updated;
+  }
 }
 
 export const productService = new ProductService();
