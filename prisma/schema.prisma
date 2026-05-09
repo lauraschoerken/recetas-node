@@ -60,6 +60,7 @@ model User {
   productOverrides          ProductUserOverride[]
   submittedProductProposals ProductProposal[]                 @relation("ProductProposalCreator")
   reviewedProductProposals  ProductProposal[]                 @relation("ProductProposalReviewer")
+  hiddenProducts            ProductUserHide[]
 }
 
 model Recipe {
@@ -546,6 +547,7 @@ model Product {
   storeItems      UserStoreProduct[]
   overrides       ProductUserOverride[]
   proposals       ProductProposal[]
+  hiddenByUsers   ProductUserHide[]
 }
 
 model ProductMinThreshold {
@@ -584,6 +586,19 @@ model ProductUserOverride {
   imageUrl  String?
   user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+}
+
+// ── Ocultación personal de productos ──
+
+model ProductUserHide {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  productId Int
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@unique([userId, productId])
 }

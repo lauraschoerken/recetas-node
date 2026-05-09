@@ -410,6 +410,81 @@ export class ProductController {
     return { success: ok };
   }
 
+  // ── Ocultación personal ────────────────────────────────────────────────
+
+  /**
+   * @swagger
+   * /api/products/{id}/hide:
+   *   post:
+   *     tags: [Productos]
+   *     summary: Ocultar un producto de la lista personal del usuario
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: integer
+   *     responses:
+   *       200:
+   *         description: Producto ocultado
+   *       404:
+   *         description: Producto no encontrado
+   */
+  @Post("/:id/hide")
+  async hideProduct(@Param("id") id: number, @Req() req: AuthRequest) {
+    await productService.hideProduct(id, req.userId!);
+    return { success: true };
+  }
+
+  /**
+   * @swagger
+   * /api/products/{id}/hide:
+   *   delete:
+   *     tags: [Productos]
+   *     summary: Mostrar de nuevo un producto ocultado
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: integer
+   *     responses:
+   *       200:
+   *         description: Producto visible de nuevo
+   */
+  @Delete("/:id/hide")
+  async unhideProduct(@Param("id") id: number, @Req() req: AuthRequest) {
+    await productService.unhideProduct(id, req.userId!);
+    return { success: true };
+  }
+
+  /**
+   * @swagger
+   * /api/products/hidden:
+   *   get:
+   *     tags: [Productos]
+   *     summary: Listar los productos ocultados por el usuario
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       200:
+   *         description: Lista de productos ocultados
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 $ref: '#/components/schemas/Product'
+   */
+  @Get("/hidden")
+  async getHiddenProducts(@Req() req: AuthRequest) {
+    return productService.getHiddenProducts(req.userId!);
+  }
+
   // ── Propuestas de cambio ──────────────────────────────────────────────
 
   /**
@@ -481,7 +556,10 @@ export class ProductController {
    */
   @Get("/proposals")
   async getProposals(@Req() req: AuthRequest) {
-    return productService.getProposals(req.userId!, (req as any).userRole || "USER");
+    return productService.getProposals(
+      req.userId!,
+      (req as any).userRole || "USER",
+    );
   }
 
   /**

@@ -42,6 +42,7 @@ export class ProductService {
     const products = await prisma.product.findMany({
       where: {
         OR: [{ status: "GLOBAL" }, { createdByUserId: userId }],
+        NOT: { hiddenByUsers: { some: { userId } } },
       },
       orderBy: { name: "asc" },
     });
@@ -53,6 +54,7 @@ export class ProductService {
       where: {
         name: { contains: query, mode: "insensitive" },
         OR: [{ status: "GLOBAL" }, { createdByUserId: userId }],
+        NOT: { hiddenByUsers: { some: { userId } } },
       },
       orderBy: { name: "asc" },
       take: 20,
@@ -229,11 +231,18 @@ export class ProductService {
     userId: number,
     data: { name?: string; imageUrl?: string | null },
   ) {
-    const product = await prisma.product.findFirst({ where: { id: productId } });
+    const product = await prisma.product.findFirst({
+      where: { id: productId },
+    });
     if (!product) throw { httpCode: 404, message: "Producto no encontrado" };
     return prisma.productUserOverride.upsert({
       where: { userId_productId: { userId, productId } },
-      create: { userId, productId, name: data.name ?? null, imageUrl: data.imageUrl ?? null },
+      create: {
+        userId,
+        productId,
+        name: data.name ?? null,
+        imageUrl: data.imageUrl ?? null,
+      },
       update: { name: data.name ?? null, imageUrl: data.imageUrl ?? null },
     });
   }
@@ -251,21 +260,67 @@ export class ProductService {
     return deleted.count > 0;
   }
 
+  // ── Ocultación personal ──────────────────────────────────────────────
+
+  async hideProduct(productId: number, userId: number): Promise<void> {
+    const product = await prisma.product.findFirst({
+      where: {
+        id: productId,
+        OR: [{ status: "GLOBAL" }, { createdByUserId: userId }],
+      },
+    });
+    if (!product) throw { httpCode: 404, message: "Producto no encontrado" };
+    await prisma.productUserHide.upsert({
+      where: { userId_productId: { userId, productId } },
+      create: { userId, productId },
+      update: {},
+    });
+  }
+
+  async unhideProduct(productId: number, userId: number): Promise<void> {
+    await prisma.productUserHide.deleteMany({ where: { userId, productId } });
+  }
+
+  async getHiddenProducts(userId: number): Promise<ProductDto[]> {
+    const rows = await prisma.productUserHide.findMany({
+      where: { userId },
+      include: { product: true },
+      orderBy: { product: { name: "asc" } },
+    });
+    return rows.map((r) => r.product);
+  }
+
   // ── Propuestas de cambio ──────────────────────────────────────────────
 
   async createProposal(
     productId: number,
     userId: number,
-    data: { fieldName: "name" | "imageUrl"; currentValue: string; proposedValue: string },
+    data: {
+      fieldName: "name" | "imageUrl";
+      currentValue: string;
+      proposedValue: string;
+    },
   ) {
-    const product = await prisma.product.findFirst({ where: { id: productId, status: "GLOBAL" } });
-    if (!product) throw { httpCode: 404, message: "Producto global no encontrado" };
+    const product = await prisma.product.findFirst({
+      where: { id: productId, status: "GLOBAL" },
+    });
+    if (!product)
+      throw { httpCode: 404, message: "Producto global no encontrado" };
     const type = data.fieldName === "name" ? "EDIT_NAME" : "EDIT_IMAGE";
     // Solo una propuesta pendiente por campo y usuario
     const existing = await prisma.productProposal.findFirst({
-      where: { productId, proposedByUserId: userId, fieldName: data.fieldName, status: "PENDING" },
+      where: {
+        productId,
+        proposedByUserId: userId,
+        fieldName: data.fieldName,
+        status: "PENDING",
+      },
     });
-    if (existing) throw { httpCode: 409, message: "Ya tienes una propuesta pendiente para este campo" };
+    if (existing)
+      throw {
+        httpCode: 409,
+        message: "Ya tienes una propuesta pendiente para este campo",
+      };
     return prisma.productProposal.create({
       data: {
         type,
@@ -297,17 +352,28 @@ export class ProductService {
     decision: "ACCEPTED" | "REJECTED",
     adminNote?: string,
   ) {
-    const proposal = await prisma.productProposal.findUnique({ where: { id: proposalId } });
+    const proposal = await prisma.productProposal.findUnique({
+      where: { id: proposalId },
+    });
     if (!proposal) throw { httpCode: 404, message: "Propuesta no encontrada" };
-    if (proposal.status !== "PENDING") throw { httpCode: 409, message: "La propuesta ya fue revisada" };
+    if (proposal.status !== "PENDING")
+      throw { httpCode: 409, message: "La propuesta ya fue revisada" };
 
     const updated = await prisma.productProposal.update({
       where: { id: proposalId },
-      data: { status: decision, reviewedByUserId: adminId, adminNote: adminNote ?? null },
+      data: {
+        status: decision,
+        reviewedByUserId: adminId,
+        adminNote: adminNote ?? null,
+      },
     });
 
     // Si se acepta, aplicar el cambio en el producto global
-    if (decision === "ACCEPTED" && proposal.fieldName && proposal.proposedValue) {
+    if (
+      decision === "ACCEPTED" &&
+      proposal.fieldName &&
+      proposal.proposedValue
+    ) {
       await prisma.product.update({
         where: { id: proposal.productId },
         data: { [proposal.fieldName]: proposal.proposedValue },
