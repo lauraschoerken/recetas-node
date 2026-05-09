@@ -4,6 +4,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { useExpressServer } from "routing-controllers";
 import { setupSwagger } from "./swagger";
+import { ensureAdminUser } from "./utils/ensureAdminUser";
 
 import { AuthController } from "./controllers/auth.controller";
 import { RecipeController } from "./controllers/recipe.controller";
@@ -78,7 +79,8 @@ app.use(
   },
 );
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
+  await ensureAdminUser();
   console.log(`Servidor corriendo en http://localhost:${PORT}`);
   console.log(`Swagger docs en http://localhost:${PORT}/api-docs`);
 });
