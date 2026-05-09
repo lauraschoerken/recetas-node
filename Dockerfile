@@ -2,6 +2,9 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 
+# OpenSSL necesario para Prisma en Alpine
+RUN apk add --no-cache openssl
+
 # Copiar manifests e instalar dependencias (incluye generación del cliente Prisma)
 COPY package*.json ./
 COPY prisma ./prisma
@@ -16,6 +19,9 @@ RUN npm run build
 # ── Stage 2: Production ──────────────────────────────────────────────────────
 FROM node:20-alpine
 WORKDIR /app
+
+# OpenSSL necesario para que Prisma funcione en Alpine
+RUN apk add --no-cache openssl
 
 # Solo lo necesario en producción
 COPY --from=builder /app/dist ./dist
