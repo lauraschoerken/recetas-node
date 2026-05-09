@@ -5,7 +5,7 @@ WORKDIR /app
 # Copiar manifests e instalar dependencias (incluye generación del cliente Prisma)
 COPY package*.json ./
 COPY prisma ./prisma
-RUN npm ci
+RUN npm install --no-audit --no-fund
 RUN npx prisma generate
 
 # Compilar TypeScript
