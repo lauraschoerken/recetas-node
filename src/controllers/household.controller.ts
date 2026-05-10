@@ -389,6 +389,7 @@ export class HouseholdController {
    *   post:
    *     tags: [Hogar]
    *     summary: Abandonar el hogar
+   *     description: El admin solo puede salir si es el único miembro. Si hay otros, debe transferir el rol o disolver el hogar.
    *     parameters:
    *       - in: path
    *         name: id
@@ -399,12 +400,87 @@ export class HouseholdController {
    *       200:
    *         description: Hogar abandonado correctamente
    *       400:
-   *         description: Error al abandonar
+   *         description: Error al abandonar (ej. admin con otros miembros)
    */
   @Post("/:id/leave")
   async leave(@Param("id") id: number, @Req() req: AuthRequest) {
     try {
       return await householdService.leave(id, req.userId!);
+    } catch (e: any) {
+      throw { httpCode: 400, message: e.message };
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/household/{id}/transfer-admin:
+   *   post:
+   *     tags: [Hogar]
+   *     summary: Transferir el rol de admin a otro miembro y salir del hogar
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: integer
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [newAdminUserId]
+   *             properties:
+   *               newAdminUserId:
+   *                 type: integer
+   *     responses:
+   *       200:
+   *         description: Admin transferido y solicitante eliminado del hogar
+   *       400:
+   *         description: Error
+   */
+  @Post("/:id/transfer-admin")
+  async transferAdmin(
+    @Param("id") id: number,
+    @Body() body: { newAdminUserId: number },
+    @Req() req: AuthRequest,
+  ) {
+    if (!body.newAdminUserId)
+      throw { httpCode: 400, message: "newAdminUserId es requerido" };
+    try {
+      return await householdService.transferAdmin(
+        id,
+        body.newAdminUserId,
+        req.userId!,
+      );
+    } catch (e: any) {
+      throw { httpCode: 400, message: e.message };
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/household/{id}/dissolve:
+   *   post:
+   *     tags: [Hogar]
+   *     summary: Disolver el hogar (elimina todos los miembros y el hogar)
+   *     description: Solo el ADMIN puede disolver el hogar.
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: integer
+   *     responses:
+   *       200:
+   *         description: Hogar disuelto
+   *       400:
+   *         description: Sin permisos
+   */
+  @Post("/:id/dissolve")
+  async dissolve(@Param("id") id: number, @Req() req: AuthRequest) {
+    try {
+      return await householdService.dissolve(id, req.userId!);
     } catch (e: any) {
       throw { httpCode: 400, message: e.message };
     }

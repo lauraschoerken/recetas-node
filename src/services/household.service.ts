@@ -269,7 +269,69 @@ export const householdService = {
   },
 
   async leave(householdId: number, userId: number) {
+    const member = await prisma.householdMember.findFirst({
+      where: { userId, householdId },
+    });
+    if (!member) throw new Error("No eres miembro de este hogar");
+
+    if (member.role === "ADMIN") {
+      const otherMembers = await prisma.householdMember.count({
+        where: { householdId, userId: { not: userId } },
+      });
+      if (otherMembers > 0) {
+        throw new Error(
+          "Eres el administrador y hay otros miembros en el hogar. Debes transferir el rol de administrador a otro miembro o disolver el hogar antes de salir.",
+        );
+      }
+    }
+
     return this.removeMember(householdId, userId, userId);
+  },
+
+  async transferAdmin(
+    householdId: number,
+    newAdminUserId: number,
+    requesterId: number,
+  ) {
+    const requester = await prisma.householdMember.findFirst({
+      where: { userId: requesterId, householdId },
+    });
+    if (!requester) throw new Error("No eres miembro de este hogar");
+    if (requester.role !== "ADMIN")
+      throw new Error("Solo el administrador puede transferir el rol");
+
+    const newAdmin = await prisma.householdMember.findFirst({
+      where: { userId: newAdminUserId, householdId },
+    });
+    if (!newAdmin)
+      throw new Error("El usuario seleccionado no es miembro del hogar");
+
+    await prisma.householdMember.updateMany({
+      where: { householdId, userId: newAdminUserId },
+      data: { role: "ADMIN" },
+    });
+
+    // El requester sale del hogar
+    await prisma.householdMember.deleteMany({
+      where: { userId: requesterId, householdId },
+    });
+
+    return { success: true };
+  },
+
+  async dissolve(householdId: number, requesterId: number) {
+    const requester = await prisma.householdMember.findFirst({
+      where: { userId: requesterId, householdId },
+    });
+    if (!requester) throw new Error("No eres miembro de este hogar");
+    if (requester.role !== "ADMIN")
+      throw new Error("Solo el administrador puede disolver el hogar");
+
+    await prisma.householdInvite.deleteMany({ where: { householdId } });
+    await prisma.householdMember.deleteMany({ where: { householdId } });
+    await prisma.household.delete({ where: { id: householdId } });
+
+    return { success: true };
   },
 
   async updatePlanningAlertScope(userId: number, scope: "own" | "all") {
