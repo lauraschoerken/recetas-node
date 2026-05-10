@@ -106,7 +106,10 @@ export const backupService = {
       prisma.userStore.findMany({
         where: { userId },
         include: {
-          ingredients: { include: { ingredient: { select: { name: true } } } },
+          ingredients: {
+            where: { userId },
+            include: { ingredient: { select: { name: true } } },
+          },
           products: { include: { product: { select: { name: true } } } },
         },
       }),
@@ -2318,18 +2321,21 @@ export const backupService = {
             for (const si of s.ingredients || []) {
               const ingId = ingNameToId.get(si.ingredientName);
               if (!ingId) continue;
+              const ingUserId = si.userEmail
+                ? (emailToId.get(si.userEmail) ?? userId)
+                : userId;
               await prisma.userStoreIngredient.upsert({
                 where: {
                   storeId_ingredientId_userId: {
                     storeId: existing.id,
                     ingredientId: ingId,
-                    userId,
+                    userId: ingUserId,
                   },
                 },
                 create: {
                   storeId: existing.id,
                   ingredientId: ingId,
-                  userId,
+                  userId: ingUserId,
                   purchaseUrl: si.purchaseUrl,
                   preferredUnit: si.preferredUnit,
                   sortOrder: si.sortOrder,
@@ -2359,11 +2365,14 @@ export const backupService = {
         for (const si of s.ingredients || []) {
           const ingId = ingNameToId.get(si.ingredientName);
           if (!ingId) continue;
+          const ingUserId = si.userEmail
+            ? (emailToId.get(si.userEmail) ?? userId)
+            : userId;
           await prisma.userStoreIngredient.create({
             data: {
               storeId: newStore.id,
               ingredientId: ingId,
-              userId,
+              userId: ingUserId,
               purchaseUrl: si.purchaseUrl,
               preferredUnit: si.preferredUnit,
               sortOrder: si.sortOrder,
@@ -2725,7 +2734,12 @@ export const backupService = {
       prisma.userStore.findMany({
         include: {
           user: { select: { email: true } },
-          ingredients: { include: { ingredient: { select: { name: true } } } },
+          ingredients: {
+            include: {
+              ingredient: { select: { name: true } },
+              user: { select: { email: true } },
+            },
+          },
           products: { include: { product: { select: { name: true } } } },
         },
       }),
@@ -3044,6 +3058,7 @@ export const backupService = {
           logoUrl: s.logoUrl,
           isShared: s.isShared,
           ingredients: s.ingredients.map((si) => ({
+            userEmail: (si as any).user?.email ?? s.user.email,
             ingredientName: si.ingredient.name,
             purchaseUrl: si.purchaseUrl,
             preferredUnit: si.preferredUnit,
