@@ -10,7 +10,7 @@ import {
   UseBefore,
   HttpCode,
 } from "routing-controllers";
-import { userStoreService } from "../services";
+import { userStoreService, householdService } from "../services";
 import { authMiddleware, AuthRequest } from "../middlewares";
 
 @JsonController("/stores")
@@ -28,7 +28,8 @@ export class UserStoreController {
    */
   @Get("/")
   async getAll(@Req() req: AuthRequest) {
-    return userStoreService.getAll(req.userId!);
+    const householdId = await householdService.getHouseholdId(req.userId!);
+    return userStoreService.getAll(req.userId!, householdId ?? undefined);
   }
 
   /**
@@ -99,7 +100,13 @@ export class UserStoreController {
     @Body()
     body: { name?: string; url?: string; logoUrl?: string; isShared?: boolean },
   ) {
-    const store = await userStoreService.update(id, req.userId!, body);
+    const householdId = await householdService.getHouseholdId(req.userId!);
+    const store = await userStoreService.update(
+      id,
+      req.userId!,
+      body,
+      householdId ?? undefined,
+    );
     if (!store) throw { httpCode: 404, message: "Tienda no encontrada" };
     return store;
   }
