@@ -264,11 +264,13 @@ export const backupService = {
           defaultLocation: o.defaultLocation,
           purchaseIsIndifferent: o.purchaseIsIndifferent,
         })),
-        ingredientConversionOverrides: ingredientConversionOverrides.map((o) => ({
-          ingredientName: o.ingredient.name,
-          unitName: o.unitName,
-          gramsPerUnit: o.gramsPerUnit,
-        })),
+        ingredientConversionOverrides: ingredientConversionOverrides.map(
+          (o) => ({
+            ingredientName: o.ingredient.name,
+            unitName: o.unitName,
+            gramsPerUnit: o.gramsPerUnit,
+          }),
+        ),
         ingredientVariantOverrides: ingredientVariantOverrides.map((o) => ({
           ingredientName: o.variant.ingredient.name,
           variantName: o.variant.name,
@@ -967,12 +969,17 @@ export const backupService = {
 
     // Import ingredient overrides personales
     if (data.ingredientOverrides) {
-      let created = 0, skipped = 0, updated = 0;
+      let created = 0,
+        skipped = 0,
+        updated = 0;
       for (const o of data.ingredientOverrides) {
         const ing = await prisma.ingredient.findFirst({
           where: { name: o.ingredientName, status: "GLOBAL" },
         });
-        if (!ing) { skipped++; continue; }
+        if (!ing) {
+          skipped++;
+          continue;
+        }
         const existing = await prisma.ingredientUserOverride.findUnique({
           where: { userId_ingredientId: { userId, ingredientId: ing.id } },
         });
@@ -980,13 +987,25 @@ export const backupService = {
           if (mode === "overwrite") {
             await prisma.ingredientUserOverride.update({
               where: { id: existing.id },
-              data: { preferredUnit: o.preferredUnit, imageUrl: o.imageUrl, defaultLocation: o.defaultLocation, purchaseIsIndifferent: o.purchaseIsIndifferent ?? false },
+              data: {
+                preferredUnit: o.preferredUnit,
+                imageUrl: o.imageUrl,
+                defaultLocation: o.defaultLocation,
+                purchaseIsIndifferent: o.purchaseIsIndifferent ?? false,
+              },
             });
             updated++;
           } else skipped++;
         } else {
           await prisma.ingredientUserOverride.create({
-            data: { userId, ingredientId: ing.id, preferredUnit: o.preferredUnit, imageUrl: o.imageUrl, defaultLocation: o.defaultLocation, purchaseIsIndifferent: o.purchaseIsIndifferent ?? false },
+            data: {
+              userId,
+              ingredientId: ing.id,
+              preferredUnit: o.preferredUnit,
+              imageUrl: o.imageUrl,
+              defaultLocation: o.defaultLocation,
+              purchaseIsIndifferent: o.purchaseIsIndifferent ?? false,
+            },
           });
           created++;
         }
@@ -996,22 +1015,44 @@ export const backupService = {
 
     // Import ingredient conversion overrides
     if (data.ingredientConversionOverrides) {
-      let created = 0, skipped = 0, updated = 0;
+      let created = 0,
+        skipped = 0,
+        updated = 0;
       for (const o of data.ingredientConversionOverrides) {
         const ing = await prisma.ingredient.findFirst({
           where: { name: o.ingredientName, status: "GLOBAL" },
         });
-        if (!ing) { skipped++; continue; }
-        const existing = await prisma.ingredientConversionUserOverride.findUnique({
-          where: { userId_ingredientId_unitName: { userId, ingredientId: ing.id, unitName: o.unitName } },
-        });
+        if (!ing) {
+          skipped++;
+          continue;
+        }
+        const existing =
+          await prisma.ingredientConversionUserOverride.findUnique({
+            where: {
+              userId_ingredientId_unitName: {
+                userId,
+                ingredientId: ing.id,
+                unitName: o.unitName,
+              },
+            },
+          });
         if (existing) {
           if (mode === "overwrite") {
-            await prisma.ingredientConversionUserOverride.update({ where: { id: existing.id }, data: { gramsPerUnit: o.gramsPerUnit } });
+            await prisma.ingredientConversionUserOverride.update({
+              where: { id: existing.id },
+              data: { gramsPerUnit: o.gramsPerUnit },
+            });
             updated++;
           } else skipped++;
         } else {
-          await prisma.ingredientConversionUserOverride.create({ data: { userId, ingredientId: ing.id, unitName: o.unitName, gramsPerUnit: o.gramsPerUnit } });
+          await prisma.ingredientConversionUserOverride.create({
+            data: {
+              userId,
+              ingredientId: ing.id,
+              unitName: o.unitName,
+              gramsPerUnit: o.gramsPerUnit,
+            },
+          });
           created++;
         }
       }
@@ -1020,36 +1061,80 @@ export const backupService = {
 
     // Import user stores
     if (data.userStores) {
-      let created = 0, skipped = 0, updated = 0;
+      let created = 0,
+        skipped = 0,
+        updated = 0;
       for (const s of data.userStores) {
-        const existing = await prisma.userStore.findFirst({ where: { userId, name: s.name } });
+        const existing = await prisma.userStore.findFirst({
+          where: { userId, name: s.name },
+        });
         let storeId: number;
         if (existing) {
           if (mode === "overwrite") {
-            await prisma.userStore.update({ where: { id: existing.id }, data: { url: s.url, logoUrl: s.logoUrl, isShared: s.isShared ?? false } });
+            await prisma.userStore.update({
+              where: { id: existing.id },
+              data: {
+                url: s.url,
+                logoUrl: s.logoUrl,
+                isShared: s.isShared ?? false,
+              },
+            });
             updated++;
-          } else { skipped++; continue; }
+          } else {
+            skipped++;
+            continue;
+          }
           storeId = existing.id;
         } else {
-          const newStore = await prisma.userStore.create({ data: { userId, name: s.name, url: s.url, logoUrl: s.logoUrl, isShared: s.isShared ?? false } });
+          const newStore = await prisma.userStore.create({
+            data: {
+              userId,
+              name: s.name,
+              url: s.url,
+              logoUrl: s.logoUrl,
+              isShared: s.isShared ?? false,
+            },
+          });
           storeId = newStore.id;
           created++;
         }
         for (const si of s.ingredients || []) {
-          const ing = await prisma.ingredient.findFirst({ where: { name: si.ingredientName, status: "GLOBAL" } });
+          const ing = await prisma.ingredient.findFirst({
+            where: { name: si.ingredientName, status: "GLOBAL" },
+          });
           if (!ing) continue;
           await prisma.userStoreIngredient.upsert({
             where: { storeId_ingredientId: { storeId, ingredientId: ing.id } },
-            create: { storeId, ingredientId: ing.id, purchaseUrl: si.purchaseUrl, preferredUnit: si.preferredUnit, sortOrder: si.sortOrder },
-            update: { purchaseUrl: si.purchaseUrl, preferredUnit: si.preferredUnit, sortOrder: si.sortOrder },
+            create: {
+              storeId,
+              ingredientId: ing.id,
+              purchaseUrl: si.purchaseUrl,
+              preferredUnit: si.preferredUnit,
+              sortOrder: si.sortOrder,
+            },
+            update: {
+              purchaseUrl: si.purchaseUrl,
+              preferredUnit: si.preferredUnit,
+              sortOrder: si.sortOrder,
+            },
           });
         }
         for (const sp of s.products || []) {
-          const prod = await prisma.product.findFirst({ where: { name: { equals: sp.productName, mode: "insensitive" }, status: "GLOBAL" } });
+          const prod = await prisma.product.findFirst({
+            where: {
+              name: { equals: sp.productName, mode: "insensitive" },
+              status: "GLOBAL",
+            },
+          });
           if (!prod) continue;
           await prisma.userStoreProduct.upsert({
             where: { storeId_productId: { storeId, productId: prod.id } },
-            create: { storeId, productId: prod.id, purchaseUrl: sp.purchaseUrl, sortOrder: sp.sortOrder },
+            create: {
+              storeId,
+              productId: prod.id,
+              purchaseUrl: sp.purchaseUrl,
+              sortOrder: sp.sortOrder,
+            },
             update: { purchaseUrl: sp.purchaseUrl, sortOrder: sp.sortOrder },
           });
         }
@@ -1059,18 +1144,40 @@ export const backupService = {
 
     // Import product overrides
     if (data.productOverrides) {
-      let created = 0, skipped = 0, updated = 0;
+      let created = 0,
+        skipped = 0,
+        updated = 0;
       for (const o of data.productOverrides) {
-        const prod = await prisma.product.findFirst({ where: { name: { equals: o.productName, mode: "insensitive" }, status: "GLOBAL" } });
-        if (!prod) { skipped++; continue; }
-        const existing = await prisma.productUserOverride.findUnique({ where: { userId_productId: { userId, productId: prod.id } } });
+        const prod = await prisma.product.findFirst({
+          where: {
+            name: { equals: o.productName, mode: "insensitive" },
+            status: "GLOBAL",
+          },
+        });
+        if (!prod) {
+          skipped++;
+          continue;
+        }
+        const existing = await prisma.productUserOverride.findUnique({
+          where: { userId_productId: { userId, productId: prod.id } },
+        });
         if (existing) {
           if (mode === "overwrite") {
-            await prisma.productUserOverride.update({ where: { id: existing.id }, data: { name: o.name, imageUrl: o.imageUrl } });
+            await prisma.productUserOverride.update({
+              where: { id: existing.id },
+              data: { name: o.name, imageUrl: o.imageUrl },
+            });
             updated++;
           } else skipped++;
         } else {
-          await prisma.productUserOverride.create({ data: { userId, productId: prod.id, name: o.name, imageUrl: o.imageUrl } });
+          await prisma.productUserOverride.create({
+            data: {
+              userId,
+              productId: prod.id,
+              name: o.name,
+              imageUrl: o.imageUrl,
+            },
+          });
           created++;
         }
       }
@@ -1114,6 +1221,7 @@ export const backupService = {
       await prisma.userStore.deleteMany();
       await prisma.ingredientTagHidden.deleteMany();
       await prisma.ingredientTagAssignment.deleteMany();
+      await prisma.ingredientTagUserPreference.deleteMany();
       await prisma.ingredientTag.deleteMany();
       await prisma.ingredientConversionUserOverride.deleteMany();
       await prisma.ingredientVariantUserOverride.deleteMany();
@@ -1126,6 +1234,9 @@ export const backupService = {
       await prisma.shoppingItem.deleteMany();
       await prisma.homeItemHistory.deleteMany();
       await prisma.homeItem.deleteMany();
+      await prisma.productMinThreshold.deleteMany();
+      await prisma.productUserHide.deleteMany();
+      await prisma.product.deleteMany();
       await prisma.weekPlanSelection.deleteMany();
       await prisma.weekPlan.deleteMany();
       await prisma.recipeComponentOption.deleteMany();
@@ -1505,6 +1616,48 @@ export const backupService = {
         created++;
       }
       results.ingredientTagHidden = { created, skipped, updated: 0 };
+    }
+
+    if (data.ingredientTagUserPreferences) {
+      let created = 0,
+        skipped = 0,
+        updated = 0;
+      for (const p of data.ingredientTagUserPreferences) {
+        const userId = emailToId.get(p.userEmail);
+        const tagId = tagNameToId.get(p.tagName);
+        if (!userId || !tagId) {
+          skipped++;
+          continue;
+        }
+        const existing = await prisma.ingredientTagUserPreference.findUnique({
+          where: { userId_tagId: { userId, tagId } },
+        });
+        if (existing) {
+          if (mode === "overwrite") {
+            await prisma.ingredientTagUserPreference.update({
+              where: { id: existing.id },
+              data: {
+                colorOverride: p.colorOverride,
+                isHiddenGlobally: p.isHiddenGlobally ?? false,
+              },
+            });
+            updated++;
+          } else {
+            skipped++;
+          }
+        } else {
+          await prisma.ingredientTagUserPreference.create({
+            data: {
+              userId,
+              tagId,
+              colorOverride: p.colorOverride,
+              isHiddenGlobally: p.isHiddenGlobally ?? false,
+            },
+          });
+          created++;
+        }
+      }
+      results.ingredientTagUserPreferences = { created, skipped, updated };
     }
 
     // ── 6. OVERRIDES DE INGREDIENTES ──────────────────────────────────────
@@ -2212,22 +2365,93 @@ export const backupService = {
       results.userStores = { created, skipped, updated };
     }
 
-    // Import product user overrides (admin global backup)
-    if (data.productUserOverrides) {
-      let created = 0, skipped = 0, updated = 0;
-      for (const o of data.productUserOverrides) {
-        const userEntry = emailToId.get(o.userEmail);
-        if (!userEntry) { skipped++; continue; }
-        const prod = await prisma.product.findFirst({ where: { name: { equals: o.productName, mode: "insensitive" } } });
-        if (!prod) { skipped++; continue; }
-        const existing = await prisma.productUserOverride.findUnique({ where: { userId_productId: { userId: userEntry, productId: prod.id } } });
+    // ── 15. PRODUCTS ──────────────────────────────────────────────────────
+    if (data.products) {
+      let created = 0,
+        skipped = 0,
+        updated = 0;
+      for (const p of data.products) {
+        const creatorId = p.createdByEmail
+          ? (emailToId.get(p.createdByEmail) ?? null)
+          : null;
+        const existing = await prisma.product.findFirst({
+          where:
+            p.status === "GLOBAL"
+              ? {
+                  name: { equals: p.name, mode: "insensitive" },
+                  status: "GLOBAL",
+                }
+              : {
+                  name: { equals: p.name, mode: "insensitive" },
+                  createdByUserId: creatorId ?? undefined,
+                  status: p.status ?? "PRIVATE",
+                },
+        });
         if (existing) {
           if (mode === "overwrite") {
-            await prisma.productUserOverride.update({ where: { id: existing.id }, data: { name: o.name, imageUrl: o.imageUrl } });
+            await prisma.product.update({
+              where: { id: existing.id },
+              data: { imageUrl: p.imageUrl, status: p.status ?? "GLOBAL" },
+            });
+            updated++;
+          } else {
+            skipped++;
+          }
+        } else {
+          await prisma.product.create({
+            data: {
+              name: p.name,
+              imageUrl: p.imageUrl ?? null,
+              status: p.status ?? "GLOBAL",
+              createdByUserId: creatorId,
+            },
+          });
+          created++;
+        }
+      }
+      results.products = { created, skipped, updated };
+    }
+
+    // Import product user overrides (admin global backup)
+    if (data.productUserOverrides) {
+      let created = 0,
+        skipped = 0,
+        updated = 0;
+      for (const o of data.productUserOverrides) {
+        const userEntry = emailToId.get(o.userEmail);
+        if (!userEntry) {
+          skipped++;
+          continue;
+        }
+        const prod = await prisma.product.findFirst({
+          where: { name: { equals: o.productName, mode: "insensitive" } },
+        });
+        if (!prod) {
+          skipped++;
+          continue;
+        }
+        const existing = await prisma.productUserOverride.findUnique({
+          where: {
+            userId_productId: { userId: userEntry, productId: prod.id },
+          },
+        });
+        if (existing) {
+          if (mode === "overwrite") {
+            await prisma.productUserOverride.update({
+              where: { id: existing.id },
+              data: { name: o.name, imageUrl: o.imageUrl },
+            });
             updated++;
           } else skipped++;
         } else {
-          await prisma.productUserOverride.create({ data: { userId: userEntry, productId: prod.id, name: o.name, imageUrl: o.imageUrl } });
+          await prisma.productUserOverride.create({
+            data: {
+              userId: userEntry,
+              productId: prod.id,
+              name: o.name,
+              imageUrl: o.imageUrl,
+            },
+          });
           created++;
         }
       }
@@ -2236,18 +2460,29 @@ export const backupService = {
 
     // Import product proposals (admin global backup)
     if (data.productProposals) {
-      let created = 0, skipped = 0;
+      let created = 0,
+        skipped = 0;
       for (const p of data.productProposals) {
         const proposedByUserId = emailToId.get(p.proposedByEmail);
-        if (!proposedByUserId) { skipped++; continue; }
-        const prod = await prisma.product.findFirst({ where: { name: { equals: p.productName, mode: "insensitive" } } });
-        if (!prod) { skipped++; continue; }
+        if (!proposedByUserId) {
+          skipped++;
+          continue;
+        }
+        const prod = await prisma.product.findFirst({
+          where: { name: { equals: p.productName, mode: "insensitive" } },
+        });
+        if (!prod) {
+          skipped++;
+          continue;
+        }
         await prisma.productProposal.create({
           data: {
             type: p.type,
             status: p.status,
             proposedByUserId,
-            reviewedByUserId: p.reviewedByEmail ? (emailToId.get(p.reviewedByEmail) ?? null) : null,
+            reviewedByUserId: p.reviewedByEmail
+              ? (emailToId.get(p.reviewedByEmail) ?? null)
+              : null,
             productId: prod.id,
             fieldName: p.fieldName,
             currentValue: p.currentValue,
@@ -2259,6 +2494,52 @@ export const backupService = {
         created++;
       }
       results.productProposals = { created, skipped, updated: 0 };
+    }
+
+    // ── 17. PRODUCT THRESHOLDS ────────────────────────────────────────────
+    if (data.productThresholds) {
+      let created = 0,
+        skipped = 0,
+        updated = 0;
+      for (const t of data.productThresholds) {
+        const prod = await prisma.product.findFirst({
+          where: { name: { equals: t.productName, mode: "insensitive" } },
+        });
+        if (!prod) {
+          skipped++;
+          continue;
+        }
+        const userId = t.userEmail
+          ? (emailToId.get(t.userEmail) ?? null)
+          : null;
+        const existing = await prisma.productMinThreshold.findFirst({
+          where: userId
+            ? { productId: prod.id, userId }
+            : { productId: prod.id },
+        });
+        if (existing) {
+          if (mode === "overwrite") {
+            await prisma.productMinThreshold.update({
+              where: { id: existing.id },
+              data: { minQuantity: t.minQuantity, unit: t.unit },
+            });
+            updated++;
+          } else {
+            skipped++;
+          }
+        } else {
+          await prisma.productMinThreshold.create({
+            data: {
+              productId: prod.id,
+              userId,
+              minQuantity: t.minQuantity,
+              unit: t.unit,
+            },
+          });
+          created++;
+        }
+      }
+      results.productThresholds = { created, skipped, updated };
     }
 
     return { mode, results };
@@ -2288,6 +2569,7 @@ export const backupService = {
       productOverrides,
       productProposals,
       productThresholds,
+      tagUserPreferences,
     ] = await Promise.all([
       prisma.user.findMany({
         select: {
@@ -2462,6 +2744,12 @@ export const backupService = {
         include: {
           product: { select: { name: true } },
           user: { select: { email: true } },
+        },
+      }),
+      prisma.ingredientTagUserPreference.findMany({
+        include: {
+          user: { select: { email: true } },
+          tag: { select: { name: true } },
         },
       }),
     ]);
@@ -2751,11 +3039,12 @@ export const backupService = {
             preferredUnit: si.preferredUnit,
             sortOrder: si.sortOrder,
           })),
-          products: (s as any).products?.map((sp: any) => ({
-            productName: sp.product.name,
-            purchaseUrl: sp.purchaseUrl,
-            sortOrder: sp.sortOrder,
-          })) ?? [],
+          products:
+            (s as any).products?.map((sp: any) => ({
+              productName: sp.product.name,
+              purchaseUrl: sp.purchaseUrl,
+              sortOrder: sp.sortOrder,
+            })) ?? [],
         })),
 
         products: allProducts.map((p) => ({
@@ -2791,6 +3080,13 @@ export const backupService = {
           userEmail: (t as any).user?.email ?? null,
           minQuantity: t.minQuantity,
           unit: t.unit,
+        })),
+
+        ingredientTagUserPreferences: tagUserPreferences.map((p) => ({
+          userEmail: p.user.email,
+          tagName: p.tag.name,
+          colorOverride: p.colorOverride,
+          isHiddenGlobally: p.isHiddenGlobally,
         })),
       },
     };
