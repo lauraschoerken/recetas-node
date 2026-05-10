@@ -427,7 +427,10 @@ const options: swaggerJsdoc.Options = {
       },
     ],
   },
-  apis: ["./src/controllers/*.ts"],
+  apis:
+    process.env.NODE_ENV === "production"
+      ? ["./dist/controllers/*.js"]
+      : ["./src/controllers/*.ts"],
 };
 
 const swaggerSpec = swaggerJsdoc(options);
