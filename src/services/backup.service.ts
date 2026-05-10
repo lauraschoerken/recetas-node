@@ -1104,10 +1104,17 @@ export const backupService = {
           });
           if (!ing) continue;
           await prisma.userStoreIngredient.upsert({
-            where: { storeId_ingredientId: { storeId, ingredientId: ing.id } },
+            where: {
+              storeId_ingredientId_userId: {
+                storeId,
+                ingredientId: ing.id,
+                userId,
+              },
+            },
             create: {
               storeId,
               ingredientId: ing.id,
+              userId,
               purchaseUrl: si.purchaseUrl,
               preferredUnit: si.preferredUnit,
               sortOrder: si.sortOrder,
@@ -2313,14 +2320,16 @@ export const backupService = {
               if (!ingId) continue;
               await prisma.userStoreIngredient.upsert({
                 where: {
-                  storeId_ingredientId: {
+                  storeId_ingredientId_userId: {
                     storeId: existing.id,
                     ingredientId: ingId,
+                    userId,
                   },
                 },
                 create: {
                   storeId: existing.id,
                   ingredientId: ingId,
+                  userId,
                   purchaseUrl: si.purchaseUrl,
                   preferredUnit: si.preferredUnit,
                   sortOrder: si.sortOrder,
@@ -2354,6 +2363,7 @@ export const backupService = {
             data: {
               storeId: newStore.id,
               ingredientId: ingId,
+              userId,
               purchaseUrl: si.purchaseUrl,
               preferredUnit: si.preferredUnit,
               sortOrder: si.sortOrder,

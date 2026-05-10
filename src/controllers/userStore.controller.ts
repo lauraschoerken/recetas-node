@@ -126,6 +126,116 @@ export class UserStoreController {
     return null;
   }
 
+  /**
+   * @swagger
+   * /api/stores/{id}/unshare:
+   *   post:
+   *     tags: [Tiendas]
+   *     summary: Dejar de compartir una tienda
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema: { type: integer }
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [mode]
+   *             properties:
+   *               mode:
+   *                 type: string
+   *                 enum: [delete, duplicate]
+   *     responses:
+   *       200:
+   *         description: Tienda actualizada
+   */
+  @Post("/:id/unshare")
+  async unshare(
+    @Param("id") id: number,
+    @Req() req: AuthRequest,
+    @Body() body: { mode: "delete" | "duplicate" },
+  ) {
+    if (!body.mode || !["delete", "duplicate"].includes(body.mode))
+      throw { httpCode: 400, message: "mode debe ser 'delete' o 'duplicate'" };
+    const householdId = await householdService.getHouseholdId(req.userId!);
+    const store = await userStoreService.unshare(
+      id,
+      req.userId!,
+      body.mode,
+      householdId ?? undefined,
+    );
+    if (!store) throw { httpCode: 404, message: "Tienda no encontrada" };
+    return store;
+  }
+
+  /**
+   * @swagger
+   * /api/stores/{id}/check-other-users:
+   *   get:
+   *     tags: [Tiendas]
+   *     summary: Comprobar si otros usuarios usan esta tienda
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema: { type: integer }
+   *     responses:
+   *       200:
+   *         description: Resultado
+   */
+  @Get("/:id/check-other-users")
+  async checkOtherUsers(@Param("id") id: number) {
+    return userStoreService.getOtherUsersIngredientCount(id);
+  }
+
+  /**
+   * @swagger
+   * /api/stores/{id}/merge:
+   *   post:
+   *     tags: [Tiendas]
+   *     summary: Fusionar una tienda propia con otra del hogar
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema: { type: integer }
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [targetStoreId]
+   *             properties:
+   *               targetStoreId: { type: integer }
+   *     responses:
+   *       200:
+   *         description: Tienda fusionada
+   */
+  @Post("/:id/merge")
+  async mergeStores(
+    @Param("id") sourceStoreId: number,
+    @Req() req: AuthRequest,
+    @Body() body: { targetStoreId: number },
+  ) {
+    if (!body.targetStoreId)
+      throw { httpCode: 400, message: "targetStoreId es requerido" };
+    const householdId = await householdService.getHouseholdId(req.userId!);
+    if (!householdId)
+      throw { httpCode: 400, message: "No perteneces a un hogar" };
+    const store = await userStoreService.mergeStores(
+      sourceStoreId,
+      body.targetStoreId,
+      req.userId!,
+      householdId,
+    );
+    if (!store) throw { httpCode: 404, message: "Tienda no encontrada" };
+    return store;
+  }
+
   // ===== Ingredientes en tienda =====
 
   /**
@@ -164,10 +274,12 @@ export class UserStoreController {
   ) {
     if (!body.ingredientId)
       throw { httpCode: 400, message: "ingredientId es requerido" };
+    const householdId = await householdService.getHouseholdId(req.userId!);
     const result = await userStoreService.addIngredient(
       storeId,
       req.userId!,
       body,
+      householdId ?? undefined,
     );
     if (!result) throw { httpCode: 404, message: "Tienda no encontrada" };
     return result;

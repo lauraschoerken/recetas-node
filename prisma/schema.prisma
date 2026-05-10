@@ -52,6 +52,7 @@ model User {
   reviewedProposals         IngredientProposal[]              @relation("ProposalReviewer")
   // Tiendas
   stores                    UserStore[]
+  storeIngredients          UserStoreIngredient[]
   // Preferencias de tags globales
   tagUserPreferences        IngredientTagUserPreference[]
   // Productos creados por el usuario
@@ -509,13 +510,15 @@ model UserStoreIngredient {
   id            Int        @id @default(autoincrement())
   storeId       Int
   ingredientId  Int
+  userId        Int
   purchaseUrl   String?
   preferredUnit String?
   sortOrder     Int?
   store         UserStore  @relation(fields: [storeId], references: [id], onDelete: Cascade)
   ingredient    Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([storeId, ingredientId])
+  @@unique([storeId, ingredientId, userId])
 }
 
 // ── Preferencias personales de tags globales ──
