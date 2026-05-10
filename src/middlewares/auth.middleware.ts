@@ -1,16 +1,19 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
 
 export interface AuthRequest extends Request {
   userId?: number;
   userRole?: string;
 }
 
-export const authMiddleware = (
+export const authMiddleware = async (
   req: AuthRequest,
   res: Response,
   next: NextFunction,
-): void => {
+): Promise<void> => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader) {
@@ -33,8 +36,18 @@ export const authMiddleware = (
       process.env.JWT_SECRET || "default-secret",
     ) as { userId: number; role?: string };
 
-    req.userId = decoded.userId;
-    req.userRole = decoded.role || "USER";
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+      select: { id: true, role: true },
+    });
+
+    if (!user) {
+      res.status(401).json({ error: "Usuario no encontrado" });
+      return;
+    }
+
+    req.userId = user.id;
+    req.userRole = user.role || "USER";
     next();
   } catch {
     res.status(401).json({ error: "Token inválido" });
