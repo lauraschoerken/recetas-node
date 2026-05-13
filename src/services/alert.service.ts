@@ -48,12 +48,9 @@ export const alertService = {
   // ── Thresholds ──
 
   async getIngredientThresholds(userId: number) {
-    const scope = await this.getAlertScope(userId);
+    // Thresholds son siempre del usuario, nunca compartidos con el hogar
     return prisma.ingredientMinThreshold.findMany({
-      where:
-        scope.useSharedAlerts && scope.householdId
-          ? { householdId: scope.householdId }
-          : { userId },
+      where: { userId },
       include: {
         ingredient: {
           select: { id: true, name: true, unit: true, preferredUnit: true },
@@ -66,27 +63,17 @@ export const alertService = {
     dto: CreateIngredientThresholdDto,
     userId: number,
   ) {
-    const scope = await this.getAlertScope(userId);
-    const where =
-      scope.useSharedAlerts && scope.householdId
-        ? {
-            ingredientId_householdId: {
-              ingredientId: dto.ingredientId,
-              householdId: scope.householdId,
-            },
-          }
-        : { ingredientId_userId: { ingredientId: dto.ingredientId, userId } };
-
+    // Thresholds son siempre del usuario, nunca compartidos con el hogar
     const result = await prisma.ingredientMinThreshold.upsert({
-      where: where as any,
+      where: {
+        ingredientId_userId: { ingredientId: dto.ingredientId, userId },
+      },
       update: { minQuantity: dto.minQuantity, unit: dto.unit },
       create: {
         ingredientId: dto.ingredientId,
         minQuantity: dto.minQuantity,
         unit: dto.unit,
-        ...(scope.useSharedAlerts && scope.householdId
-          ? { householdId: scope.householdId }
-          : { userId }),
+        userId,
       },
     });
 
@@ -106,13 +93,14 @@ export const alertService = {
       _sum: { quantity: true },
     });
     const totalStock = stockAgg._sum.quantity || 0;
-    // Delete any stale alert so a fresh correct one is created below
+    // Las alertas sí pueden ser compartidas con el hogar (scope de alertas)
+    const alertScope = await this.getAlertScope(userId);
     await prisma.stockAlert.deleteMany({
       where: {
         ingredientId: dto.ingredientId,
         status: { in: ["OPEN", "VIEWED", "SNOOZED"] },
-        ...(scope.useSharedAlerts && scope.householdId
-          ? { householdId: scope.householdId }
+        ...(alertScope.useSharedAlerts && alertScope.householdId
+          ? { householdId: alertScope.householdId }
           : { userId }),
       },
     });
@@ -130,50 +118,30 @@ export const alertService = {
   },
 
   async deleteIngredientThreshold(ingredientId: number, userId: number) {
-    const scope = await this.getAlertScope(userId);
+    // Thresholds son siempre del usuario, nunca compartidos con el hogar
     await prisma.ingredientMinThreshold.deleteMany({
-      where: {
-        ingredientId,
-        ...(scope.useSharedAlerts && scope.householdId
-          ? { householdId: scope.householdId }
-          : { userId }),
-      },
+      where: { ingredientId, userId },
     });
     return { success: true };
   },
 
   async getRecipeThresholds(userId: number) {
-    const scope = await this.getAlertScope(userId);
+    // Thresholds son siempre del usuario, nunca compartidos con el hogar
     return prisma.recipeMinThreshold.findMany({
-      where:
-        scope.useSharedAlerts && scope.householdId
-          ? { householdId: scope.householdId }
-          : { userId },
+      where: { userId },
       include: { recipe: { select: { id: true, title: true } } },
     });
   },
 
   async setRecipeThreshold(dto: CreateRecipeThresholdDto, userId: number) {
-    const scope = await this.getAlertScope(userId);
-    const where =
-      scope.useSharedAlerts && scope.householdId
-        ? {
-            recipeId_householdId: {
-              recipeId: dto.recipeId,
-              householdId: scope.householdId,
-            },
-          }
-        : { recipeId_userId: { recipeId: dto.recipeId, userId } };
-
+    // Thresholds son siempre del usuario, nunca compartidos con el hogar
     const result = await prisma.recipeMinThreshold.upsert({
-      where: where as any,
+      where: { recipeId_userId: { recipeId: dto.recipeId, userId } },
       update: { minServings: dto.minServings },
       create: {
         recipeId: dto.recipeId,
         minServings: dto.minServings,
-        ...(scope.useSharedAlerts && scope.householdId
-          ? { householdId: scope.householdId }
-          : { userId }),
+        userId,
       },
     });
 
@@ -193,13 +161,14 @@ export const alertService = {
       _sum: { quantity: true },
     });
     const totalServings = stockAgg._sum.quantity || 0;
-    // Delete any stale alert so a fresh correct one is created below
+    // Las alertas sí pueden ser compartidas con el hogar (scope de alertas)
+    const alertScope = await this.getAlertScope(userId);
     await prisma.stockAlert.deleteMany({
       where: {
         recipeId: dto.recipeId,
         status: { in: ["OPEN", "VIEWED", "SNOOZED"] },
-        ...(scope.useSharedAlerts && scope.householdId
-          ? { householdId: scope.householdId }
+        ...(alertScope.useSharedAlerts && alertScope.householdId
+          ? { householdId: alertScope.householdId }
           : { userId }),
       },
     });
@@ -217,14 +186,9 @@ export const alertService = {
   },
 
   async deleteRecipeThreshold(recipeId: number, userId: number) {
-    const scope = await this.getAlertScope(userId);
+    // Thresholds son siempre del usuario, nunca compartidos con el hogar
     await prisma.recipeMinThreshold.deleteMany({
-      where: {
-        recipeId,
-        ...(scope.useSharedAlerts && scope.householdId
-          ? { householdId: scope.householdId }
-          : { userId }),
-      },
+      where: { recipeId, userId },
     });
     return { success: true };
   },
@@ -324,13 +288,9 @@ export const alertService = {
     const deltaQty = beforeQty - afterQty;
 
     if (ingredientId) {
+      // Threshold siempre es del usuario concreto (nunca del hogar)
       const threshold = await prisma.ingredientMinThreshold.findFirst({
-        where: {
-          ingredientId,
-          ...(scope.useSharedAlerts && scope.householdId
-            ? { householdId: scope.householdId }
-            : { userId }),
-        },
+        where: { ingredientId, userId },
       });
       if (threshold && afterQty < threshold.minQuantity) {
         // Check for existing OPEN/VIEWED alert for this ingredient to avoid duplicates
@@ -368,13 +328,9 @@ export const alertService = {
     }
 
     if (recipeId) {
+      // Threshold siempre es del usuario concreto (nunca del hogar)
       const threshold = await prisma.recipeMinThreshold.findFirst({
-        where: {
-          recipeId,
-          ...(scope.useSharedAlerts && scope.householdId
-            ? { householdId: scope.householdId }
-            : { userId }),
-        },
+        where: { recipeId, userId },
       });
       if (threshold && afterQty < threshold.minServings) {
         // Check for existing OPEN/VIEWED alert for this recipe to avoid duplicates
