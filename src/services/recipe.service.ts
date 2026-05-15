@@ -251,7 +251,10 @@ export class RecipeService {
       }
     }
 
-    return { data: mapped, total };
+    return {
+      data: await this.applyUserConversionOverridesToRecipes(mapped, userId),
+      total,
+    };
   }
 
   async getAuthors(userId: number): Promise<{ id: number; name: string }[]> {
@@ -298,7 +301,9 @@ export class RecipeService {
         });
     }
 
-    return mapped;
+    return (
+      await this.applyUserConversionOverridesToRecipes([mapped], userId)
+    )[0];
   }
 
   async create(
@@ -453,7 +458,10 @@ export class RecipeService {
       include: recipeInclude,
     });
 
-    return this.mapRecipe(fullRecipe!, fullRecipe!.user.name);
+    const mappedCreate = this.mapRecipe(fullRecipe!, fullRecipe!.user.name);
+    return (
+      await this.applyUserConversionOverridesToRecipes([mappedCreate], userId)
+    )[0];
   }
 
   async update(
@@ -607,7 +615,10 @@ export class RecipeService {
       include: recipeInclude,
     });
 
-    return this.mapRecipe(fullRecipe!, fullRecipe!.user.name);
+    const mappedUpdate = this.mapRecipe(fullRecipe!, fullRecipe!.user.name);
+    return (
+      await this.applyUserConversionOverridesToRecipes([mappedUpdate], userId)
+    )[0];
   }
 
   async delete(id: number, userId: number): Promise<boolean> {
@@ -864,6 +875,55 @@ export class RecipeService {
     }
 
     return { calories, protein, carbs, fat, fiber };
+  }
+
+  // Merges user-specific conversion overrides into already-mapped recipe ingredients
+  private async applyUserConversionOverridesToRecipes(
+    recipes: RecipeWithComponents[],
+    userId: number,
+  ): Promise<RecipeWithComponents[]> {
+    const ingredientIds = new Set<number>();
+    for (const r of recipes) {
+      for (const ing of r.ingredients || []) {
+        ingredientIds.add(ing.id);
+      }
+    }
+    if (ingredientIds.size === 0) return recipes;
+
+    const overrides = await prisma.ingredientConversionUserOverride.findMany({
+      where: { userId, ingredientId: { in: Array.from(ingredientIds) } },
+    });
+    if (overrides.length === 0) return recipes;
+
+    const overrideMap = new Map<number, typeof overrides>();
+    for (const o of overrides) {
+      if (!overrideMap.has(o.ingredientId)) overrideMap.set(o.ingredientId, []);
+      overrideMap.get(o.ingredientId)!.push(o);
+    }
+
+    return recipes.map((r) => ({
+      ...r,
+      ingredients: (r.ingredients || []).map((ing) => {
+        const userConvs = overrideMap.get(ing.id);
+        if (!userConvs || userConvs.length === 0) return ing;
+        const globalUnitNames = new Set(
+          (ing.conversions || []).map((c) => c.unitName.toLowerCase()),
+        );
+        const extraConversions = userConvs
+          .filter((co) => !globalUnitNames.has(co.unitName.toLowerCase()))
+          .map((co) => ({
+            id: co.id,
+            unitName: co.unitName,
+            gramsPerUnit: co.gramsPerUnit,
+            ingredientId: co.ingredientId,
+            isUserOverride: true as const,
+          }));
+        return {
+          ...ing,
+          conversions: [...(ing.conversions || []), ...extraConversions],
+        };
+      }),
+    }));
   }
 
   private mapRecipe(recipe: any, authorName?: string): RecipeWithComponents {

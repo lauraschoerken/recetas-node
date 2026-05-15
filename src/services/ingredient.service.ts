@@ -284,7 +284,7 @@ export class IngredientService {
     const statusFilter = userId
       ? { OR: [{ status: "GLOBAL" }, { createdByUserId: userId }] }
       : { status: "GLOBAL" };
-    return prisma.ingredient.findMany({
+    const results = await prisma.ingredient.findMany({
       where: {
         ...statusFilter,
         name: {
@@ -296,6 +296,13 @@ export class IngredientService {
       orderBy: { name: "asc" },
       include: ingredientInclude,
     });
+    if (userId && results.length > 0) {
+      return this.applyUserOverrides(
+        results as unknown as Ingredient[],
+        userId,
+      );
+    }
+    return results;
   }
 
   async create(
@@ -582,11 +589,14 @@ export class IngredientService {
     return true;
   }
 
-  async getById(id: number): Promise<Ingredient | null> {
-    return prisma.ingredient.findUnique({
+  async getById(id: number, userId?: number): Promise<Ingredient | null> {
+    const ingredient = await prisma.ingredient.findUnique({
       where: { id },
       include: ingredientInclude,
     });
+    if (!ingredient || !userId) return ingredient;
+    const [result] = await this.applyUserOverrides([ingredient], userId);
+    return result ?? null;
   }
 
   async setStatus(id: number, status: string): Promise<Ingredient | null> {

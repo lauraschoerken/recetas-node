@@ -170,8 +170,8 @@ export class IngredientController {
    *     summary: Obtener ingrediente por ID
    */
   @Get("/:id")
-  async getById(@Param("id") id: number) {
-    const ingredient = await ingredientService.getById(id);
+  async getById(@Param("id") id: number, @Req() req: AuthRequest) {
+    const ingredient = await ingredientService.getById(id, req.userId);
     if (!ingredient) {
       throw { httpCode: 404, message: "Ingrediente no encontrado" };
     }
