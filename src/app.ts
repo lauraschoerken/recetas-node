@@ -23,7 +23,31 @@ export function createApp() {
   const app = express();
   const bodyLimit = process.env.JSON_BODY_LIMIT || "10mb";
 
-  app.use(cors());
+  const rawOrigins = process.env.CORS_ALLOWED_ORIGINS;
+  const allowedOrigins = rawOrigins
+    ? rawOrigins
+        .split(",")
+        .map((o) => o.trim())
+        .filter(Boolean)
+    : [];
+
+  app.use(
+    cors(
+      allowedOrigins.length > 0
+        ? {
+            origin: (origin, callback) => {
+              // Permitir peticiones sin origin (ej. curl, Postman) y orígenes en la lista
+              if (!origin || allowedOrigins.includes(origin)) {
+                callback(null, true);
+              } else {
+                callback(new Error(`CORS: origen no permitido: ${origin}`));
+              }
+            },
+            credentials: true,
+          }
+        : undefined, // sin variable → permite todo (comportamiento anterior)
+    ),
+  );
   app.use(express.json({ limit: bodyLimit }));
   app.use(express.urlencoded({ limit: bodyLimit, extended: true }));
 

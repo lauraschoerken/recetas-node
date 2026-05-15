@@ -28,7 +28,30 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const bodyLimit = process.env.JSON_BODY_LIMIT || "10mb";
 
-app.use(cors());
+const rawOrigins = process.env.CORS_ALLOWED_ORIGINS;
+const allowedOrigins = rawOrigins
+  ? rawOrigins
+      .split(",")
+      .map((o) => o.trim())
+      .filter(Boolean)
+  : [];
+
+app.use(
+  cors(
+    allowedOrigins.length > 0
+      ? {
+          origin: (origin, callback) => {
+            if (!origin || allowedOrigins.includes(origin)) {
+              callback(null, true);
+            } else {
+              callback(new Error(`CORS: origen no permitido: ${origin}`));
+            }
+          },
+          credentials: true,
+        }
+      : undefined,
+  ),
+);
 app.use(express.json({ limit: bodyLimit }));
 app.use(express.urlencoded({ limit: bodyLimit, extended: true }));
 
