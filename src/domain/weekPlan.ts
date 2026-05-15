@@ -54,4 +54,6 @@ export interface ShoppingItem {
   // Unidad preferida (ej: "3 dientes" en lugar de "12 g")
   preferredUnit?: string | null;
   preferredQuantity?: number | null;
+  // Conversiones disponibles para cambiar de unidad en la lista
+  conversions?: { unitName: string; gramsPerUnit: number }[];
 }

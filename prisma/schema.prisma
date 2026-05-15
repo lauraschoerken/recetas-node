@@ -32,6 +32,7 @@ model User {
   weekPlans      WeekPlan[]
   homeItems      HomeItem[]
   shoppingItems  ShoppingItem[]
+  shoppingOverrides ShoppingOverride[]
   householdMembers  HouseholdMember[]
   sentInvites       HouseholdInvite[]  @relation("InviteSender")
   stockAlerts       StockAlert[]
@@ -150,6 +151,7 @@ model Ingredient {
   hiddenTags             IngredientTagHidden[]
   proposals              IngredientProposal[]
   storeItems             UserStoreIngredient[]
+  shoppingOverrides      ShoppingOverride[]
 }
 
 model IngredientVariant {
@@ -276,6 +278,20 @@ model ShoppingItem {
   weekPlan     WeekPlan?   @relation(fields: [weekPlanId], references: [id], onDelete: Cascade)
   householdId  Int?
   household    Household?  @relation(fields: [householdId], references: [id], onDelete: SetNull)
+}
+
+model ShoppingOverride {
+  id           Int        @id @default(autoincrement())
+  userId       Int
+  ingredientId Int
+  quantity     Float
+  unit         String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, ingredientId])
 }
 
 // ── Household (sharing) ──

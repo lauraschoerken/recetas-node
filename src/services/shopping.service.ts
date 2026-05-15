@@ -968,6 +968,10 @@ export class ShoppingService {
         quantityToBuy: Math.round(toBuyRaw * 10) / 10,
         preferredUnit,
         preferredQuantity,
+        conversions: (ingredientData.conversions || []).map((c: any) => ({
+          unitName: c.unitName,
+          gramsPerUnit: c.gramsPerUnit,
+        })),
       });
     }
 
@@ -985,7 +989,11 @@ export class ShoppingService {
         purchased: false,
       },
       include: {
-        ingredient: true,
+        ingredient: {
+          include: {
+            conversions: true,
+          },
+        },
       },
     });
 
@@ -997,6 +1005,7 @@ export class ShoppingService {
         existing.totalQuantity += item.quantity;
         existing.quantityToBuy += item.quantity;
       } else if (item.ingredientId && item.ingredient) {
+        const ingConversions = (item.ingredient as any).conversions || [];
         resultList.push({
           ingredientId: item.ingredientId,
           name: item.ingredient.name,
@@ -1006,6 +1015,10 @@ export class ShoppingService {
           quantityToBuy: item.quantity,
           preferredUnit: null,
           preferredQuantity: null,
+          conversions: ingConversions.map((c: any) => ({
+            unitName: c.unitName,
+            gramsPerUnit: c.gramsPerUnit,
+          })),
         });
       }
     }
