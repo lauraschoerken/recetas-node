@@ -69,9 +69,10 @@ function splitInstructionSteps(raw: string | null | undefined): string[] {
   const separatorPattern = /\r?\n---\r?\n/;
   const fallbackPattern = /\r?\n/;
 
-  return (separatorPattern.test(value)
-    ? value.split(separatorPattern)
-    : value.split(fallbackPattern)
+  return (
+    separatorPattern.test(value)
+      ? value.split(separatorPattern)
+      : value.split(fallbackPattern)
   )
     .map((s) => s.trim())
     .map((s) => s.replace(/^\d+\s*[\)\.\-:]\s*/, "").trim())
@@ -196,7 +197,9 @@ function mdToHtml(md: string): string {
         html.push("<ul>");
       }
       const marker = taskItem[1].toLowerCase() === "x" ? "☑" : "☐";
-      html.push(`<li class="task-item"><span class="task-marker">${marker}</span><span>${inline(taskItem[2])}</span></li>`);
+      html.push(
+        `<li class="task-item"><span class="task-marker">${marker}</span><span>${inline(taskItem[2])}</span></li>`,
+      );
       continue;
     }
 
@@ -265,9 +268,11 @@ function parseMarkdownBlocks(md: string): MarkdownBlock[] {
   const lines = md.replace(/\r\n/g, "\n").split("\n");
   const blocks: MarkdownBlock[] = [];
   let paragraph: string[] = [];
-  let list:
-    | { type: "list"; ordered: boolean; items: { text: string; checked?: boolean | null }[] }
-    | null = null;
+  let list: {
+    type: "list";
+    ordered: boolean;
+    items: { text: string; checked?: boolean | null }[];
+  } | null = null;
 
   const flushParagraph = () => {
     if (paragraph.length === 0) return;
@@ -389,12 +394,18 @@ async function renderMarkdownDescriptionPages(
       .font(titleFont)
       .fontSize(15)
       .fillColor("#ffffff")
-      .text(recipe.title || "", left + 8, 8, { width: contentW - 16, lineBreak: false });
+      .text(recipe.title || "", left + 8, 8, {
+        width: contentW - 16,
+        lineBreak: false,
+      });
     doc
       .font(bodyBold)
       .fontSize(8)
       .fillColor("#cdd9ee")
-      .text(lbl.description, left + 8, 24, { width: contentW - 16, lineBreak: false });
+      .text(lbl.description, left + 8, 24, {
+        width: contentW - 16,
+        lineBreak: false,
+      });
 
     let y = 58;
     const maxY = 812;
@@ -419,7 +430,11 @@ async function renderMarkdownDescriptionPages(
 
         const maxWidth = contentW * 0.62;
         const maxHeight = 210;
-        const scale = Math.min(maxWidth / image.width, maxHeight / image.height, 1);
+        const scale = Math.min(
+          maxWidth / image.width,
+          maxHeight / image.height,
+          1,
+        );
         const drawW = image.width * scale;
         const drawH = image.height * scale;
         const drawX = left + (contentW - drawW) / 2;
@@ -429,7 +444,11 @@ async function renderMarkdownDescriptionPages(
         doc
           .roundedRect(drawX, y, drawW, drawH, 12)
           .fillAndStroke(surface, border);
-        doc.image(imageBuffer, drawX, y, { fit: [drawW, drawH], align: "center", valign: "center" });
+        doc.image(imageBuffer, drawX, y, {
+          fit: [drawW, drawH],
+          align: "center",
+          valign: "center",
+        });
         y += drawH + 10;
         if (block.alt) {
           doc
@@ -495,7 +514,10 @@ async function renderMarkdownDescriptionPages(
           }),
         };
       });
-      const totalHeight = listHeights.reduce((sum, item) => sum + item.height + 6, 0);
+      const totalHeight = listHeights.reduce(
+        (sum, item) => sum + item.height + 6,
+        0,
+      );
       if (y + totalHeight > maxY && y > 58) break;
 
       for (let index = 0; index < block.items.length; index += 1) {
@@ -655,14 +677,16 @@ function drawDenseSteps(
     bodyBold: string;
   },
 ): { nextIndex: number; nextNumber: number } {
-  const { x, y, width, height, textDark, titleColor, bodyFont, bodyBold } = options;
+  const { x, y, width, height, textDark, titleColor, bodyFont, bodyBold } =
+    options;
   let currentY = y;
   let stepIndex = options.startIndex;
   let stepNumber = options.startNumber;
 
   while (stepIndex < steps.length) {
     const stepLabel = `${stepNumber}.`;
-    const numberW = doc.widthOfString(stepLabel, { font: bodyBold, fontSize: 9 }) + 6;
+    const numberW =
+      doc.widthOfString(stepLabel, { font: bodyBold, fontSize: 9 }) + 6;
     const textW = width - numberW;
     const stepH = Math.max(
       12,
@@ -716,7 +740,8 @@ function drawStepCards(
     bodyBold: string;
   },
 ): { nextIndex: number; nextNumber: number } {
-  const { x, y, width, height, darkBlue, textDark, bodyFont, bodyBold } = options;
+  const { x, y, width, height, darkBlue, textDark, bodyFont, bodyBold } =
+    options;
   let currentY = y;
   let stepIndex = options.startIndex;
   let stepNumber = options.startNumber;
@@ -1070,7 +1095,9 @@ async function renderRecipePage(
     const chipsBottom = chipsTop + 30;
     const imageTop = recipeImageBuffer ? chipsTop + 42 : chipsTop + 8;
     const imageBottom = recipeImageBuffer ? imageTop + imageH : chipsBottom;
-    const descriptionTop = recipeImageBuffer ? imageTop + imageH + 18 : chipsTop + 52;
+    const descriptionTop = recipeImageBuffer
+      ? imageTop + imageH + 18
+      : chipsTop + 52;
     const provisionalBlueBottom = pageBottom - 10;
     const headerH = provisionalBlueBottom + 18;
 
@@ -1103,7 +1130,9 @@ async function renderRecipePage(
           .roundedRect(frameX, frameY, frameW, imageH, 14)
           .fillAndStroke("#ffffff", "#d0d7e3");
         doc.save();
-        doc.roundedRect(frameX + 6, frameY + 6, frameW - 12, imageH - 12, 10).clip();
+        doc
+          .roundedRect(frameX + 6, frameY + 6, frameW - 12, imageH - 12, 10)
+          .clip();
         doc.image(recipeImageBuffer, frameX + 6, frameY + 6, {
           fit: [frameW - 12, imageH - 12],
           align: "center",
@@ -1140,10 +1169,14 @@ async function renderRecipePage(
     };
   };
 
-  const drawColumnBox = (x: number, y: number, width: number, height: number, title: string) => {
-    doc
-      .roundedRect(x, y, width, height, 14)
-      .fillAndStroke(softGray, "#cfd4dc");
+  const drawColumnBox = (
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    title: string,
+  ) => {
+    doc.roundedRect(x, y, width, height, 14).fillAndStroke(softGray, "#cfd4dc");
     doc.roundedRect(x + 1, y + 1, width - 2, 16, 13).fill("#e1e6ee");
     doc.rect(x + 1, y + 16, width - 2, 17).fill("#e1e6ee");
     doc
@@ -1194,16 +1227,23 @@ async function renderRecipePage(
         const bullet = line === "-" ? line : `• ${line}`;
         const lineHeight = doc.heightOfString(bullet, { width: width - 24 });
         if (cursor + lineHeight > y + height - 14) break;
-        doc.fillColor(accentGold).text("•", x + 14, cursor + 1, { lineBreak: false });
-        doc.fillColor(textDark).text(line === "-" ? line : line, x + 28, cursor, {
-          width: width - 38,
-        });
+        doc
+          .fillColor(accentGold)
+          .text("•", x + 14, cursor + 1, { lineBreak: false });
+        doc
+          .fillColor(textDark)
+          .text(line === "-" ? line : line, x + 28, cursor, {
+            width: width - 38,
+          });
         cursor += lineHeight + 6;
         ingredientIndex += 1;
       }
     }
 
-    if (ingredientIndex >= ingredientLines.length && prepIndex < prepLines.length) {
+    if (
+      ingredientIndex >= ingredientLines.length &&
+      prepIndex < prepLines.length
+    ) {
       if (cursor + 32 <= y + height - 14) {
         doc
           .lineWidth(0.8)
@@ -1298,11 +1338,12 @@ async function renderRecipePage(
           const fallbackText = block.alt
             ? `${block.alt}\n${block.url}`
             : block.url;
-          const fallbackHeight = doc.heightOfString(fallbackText, {
-            width: contentW - 32,
-            fontSize: 9,
-            lineGap: 2,
-          }) + 24;
+          const fallbackHeight =
+            doc.heightOfString(fallbackText, {
+              width: contentW - 32,
+              fontSize: 9,
+              lineGap: 2,
+            }) + 24;
           if (y + fallbackHeight > maxY && y > startY) break;
 
           doc
@@ -1312,9 +1353,14 @@ async function renderRecipePage(
             .font(BODY_BOLD)
             .fontSize(9)
             .fillColor(fallbackTitle)
-            .text("Imagen markdown no accesible desde el servidor", left + 12, y + 8, {
-              width: contentW - 24,
-            });
+            .text(
+              "Imagen markdown no accesible desde el servidor",
+              left + 12,
+              y + 8,
+              {
+                width: contentW - 24,
+              },
+            );
           doc
             .font(BODY_FONT)
             .fontSize(9)
@@ -1338,7 +1384,11 @@ async function renderRecipePage(
 
         const maxWidth = contentW * 0.62;
         const maxHeight = 180;
-        const scale = Math.min(maxWidth / image.width, maxHeight / image.height, 1);
+        const scale = Math.min(
+          maxWidth / image.width,
+          maxHeight / image.height,
+          1,
+        );
         const drawW = image.width * scale;
         const drawH = image.height * scale;
         const drawX = left + (contentW - drawW) / 2;
@@ -1432,7 +1482,8 @@ async function renderRecipePage(
             : item.checked === false
               ? "[ ] "
               : "• ";
-        const prefixWidth = doc.widthOfString(prefix, { font: BODY_BOLD, fontSize: 11 }) + 2;
+        const prefixWidth =
+          doc.widthOfString(prefix, { font: BODY_BOLD, fontSize: 11 }) + 2;
         const itemHeight = doc.heightOfString(item.text, {
           width: contentW - 18,
           fontSize: 11,
@@ -1447,7 +1498,10 @@ async function renderRecipePage(
           .font(BODY_FONT)
           .fontSize(11)
           .fillColor(textColor)
-          .text(item.text, left + prefixWidth, y, { width: contentW - prefixWidth, lineGap: 2 });
+          .text(item.text, left + prefixWidth, y, {
+            width: contentW - prefixWidth,
+            lineGap: 2,
+          });
         y += itemHeight + 6;
       }
       y += 4;
@@ -1457,8 +1511,14 @@ async function renderRecipePage(
     return { blockIndex: index, y };
   };
 
-  const trimHeaderBlueTo = (blueBottomY: number, provisionalBlueBottomY: number) => {
-    const clampedBottom = Math.max(64, Math.min(blueBottomY, provisionalBlueBottomY));
+  const trimHeaderBlueTo = (
+    blueBottomY: number,
+    provisionalBlueBottomY: number,
+  ) => {
+    const clampedBottom = Math.max(
+      64,
+      Math.min(blueBottomY, provisionalBlueBottomY),
+    );
     if (clampedBottom < provisionalBlueBottomY) {
       doc
         .rect(0, clampedBottom, pageW, pageBottom - clampedBottom + 24)
@@ -1488,7 +1548,10 @@ async function renderRecipePage(
       },
     );
     descriptionIndex = rendered.blockIndex;
-    const blueBottom = trimHeaderBlueTo(rendered.y + 6, headerLayout.provisionalBlueBottomY);
+    const blueBottom = trimHeaderBlueTo(
+      rendered.y + 6,
+      headerLayout.provisionalBlueBottomY,
+    );
     y = blueBottom + 14;
 
     while (descriptionIndex < descriptionBlocks.length) {
@@ -1517,13 +1580,20 @@ async function renderRecipePage(
     prepIndex < prepLines.length ||
     stepIndex < stepLines.length
   ) {
-    const remainingLeft = ingredientIndex < ingredientLines.length || prepIndex < prepLines.length;
+    const remainingLeft =
+      ingredientIndex < ingredientLines.length || prepIndex < prepLines.length;
     const remainingRight = stepIndex < stepLines.length;
 
     if (pageBottom - columnsPageY < 220) {
       drawFooter();
       doc.addPage();
-      columnsPageY = drawCompactHeader(remainingLeft && remainingRight ? undefined : remainingLeft ? lbl.ingredients : lbl.instructions);
+      columnsPageY = drawCompactHeader(
+        remainingLeft && remainingRight
+          ? undefined
+          : remainingLeft
+            ? lbl.ingredients
+            : lbl.instructions,
+      );
     }
 
     const bothColumns = remainingLeft && remainingRight;
@@ -1547,7 +1617,13 @@ async function renderRecipePage(
     }
 
     if (remainingRight) {
-      drawColumnBox(rightColumnX, columnsPageY, rightWidth, columnHeight, lbl.instructions);
+      drawColumnBox(
+        rightColumnX,
+        columnsPageY,
+        rightWidth,
+        columnHeight,
+        lbl.instructions,
+      );
       const renderedSteps = drawStepCards(doc, stepLines, {
         startIndex: stepIndex,
         startNumber: stepIndex + 1,
