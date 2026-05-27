@@ -64,8 +64,16 @@ function getLabels(lang?: string) {
   return PDF_LABELS[(lang === "en" ? "en" : "es") as PdfLang];
 }
 
+function normalizeMultilineText(value: string | null | undefined): string {
+  return (value || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\\r\\n/g, "\n")
+    .replace(/\\n/g, "\n")
+    .replace(/\r/g, "\n");
+}
+
 function splitInstructionSteps(raw: string | null | undefined): string[] {
-  const value = raw || "";
+  const value = normalizeMultilineText(raw);
   const separatorPattern = /\r?\n---\r?\n/;
   const fallbackPattern = /\r?\n/;
 
@@ -86,15 +94,14 @@ function splitInstructionSteps(raw: string | null | undefined): string[] {
 // Markdown → plain text with preview-like formatting for PDF rendering
 // ──────────────────────────────────────────
 function mdToPlain(md: string): string {
-  return md
-    .replace(/\r\n/g, "\n")
+  return normalizeMultilineText(md)
     .split("\n")
     .map((line) => {
       let normalized = line.trim();
       if (!normalized) return "";
 
       normalized = normalized
-        .replace(/^#{1,6}\s+/, "")
+        .replace(/^#{1,6}\s*/, "")
         .replace(/^>\s?/, "")
         .replace(/^!\[(.*?)\]\((.*?)\)$/g, "$1")
         .replace(/^!\s*/, "")
@@ -131,7 +138,7 @@ function escapeHtml(value: string): string {
 }
 
 function mdToHtml(md: string): string {
-  const lines = md.replace(/\r\n/g, "\n").split("\n");
+  const lines = normalizeMultilineText(md).split("\n");
   const html: string[] = [];
   let paragraph: string[] = [];
   let listType: "ul" | "ol" | null = null;
@@ -167,7 +174,7 @@ function mdToHtml(md: string): string {
       continue;
     }
 
-    const heading = line.match(/^(#{1,6})\s+(.*)$/);
+    const heading = line.match(/^(#{1,6})\s*(\S.*)$/);
     if (heading) {
       flushParagraph();
       closeList();
@@ -265,7 +272,7 @@ type MarkdownBlock =
   | { type: "image"; alt: string; url: string };
 
 function parseMarkdownBlocks(md: string): MarkdownBlock[] {
-  const lines = md.replace(/\r\n/g, "\n").split("\n");
+  const lines = normalizeMultilineText(md).split("\n");
   const blocks: MarkdownBlock[] = [];
   let paragraph: string[] = [];
   let list: {
@@ -303,7 +310,7 @@ function parseMarkdownBlocks(md: string): MarkdownBlock[] {
       continue;
     }
 
-    const headingMatch = line.match(/^(#{1,6})\s+(.*)$/);
+    const headingMatch = line.match(/^(#{1,6})\s*(\S.*)$/);
     if (headingMatch) {
       flushParagraph();
       flushList();
@@ -1624,13 +1631,27 @@ async function renderRecipePage(
         columnHeight,
         lbl.instructions,
       );
+      const instructionsStartY = columnsPageY + 50;
+      doc
+        .font(BODY_BOLD)
+        .fontSize(9)
+        .fillColor("#6d7785")
+        .text(
+          lbl.instructions.toUpperCase(),
+          rightColumnX + 14,
+          instructionsStartY,
+          {
+            characterSpacing: 1.4,
+            lineBreak: false,
+          },
+        );
       const renderedSteps = drawStepCards(doc, stepLines, {
         startIndex: stepIndex,
         startNumber: stepIndex + 1,
         x: rightColumnX,
-        y: columnsPageY + 50,
+        y: instructionsStartY + 20,
         width: rightWidth,
-        height: columnHeight - 64,
+        height: columnHeight - 84,
         darkBlue,
         textDark,
         bodyFont: BODY_FONT,
