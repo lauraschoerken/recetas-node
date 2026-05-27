@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import {
   Ingredient,
   CreateIngredientDto,
@@ -151,9 +151,16 @@ export class IngredientService {
         : { status: "GLOBAL" };
     }
 
-    const searchFilter = search
-      ? { name: { contains: search, mode: "insensitive" as const } }
-      : {};
+    // Búsqueda insensible a tildes usando unaccent (extensión PostgreSQL)
+    let searchIds: number[] | null = null;
+    if (search) {
+      const pattern = `%${search}%`;
+      const rows = await prisma.$queryRaw<{ id: number }[]>(
+        Prisma.sql`SELECT id FROM "Ingredient" WHERE unaccent(lower(name)) LIKE unaccent(lower(${pattern}))`
+      );
+      searchIds = rows.map((r) => r.id);
+    }
+    const searchFilter = searchIds !== null ? { id: { in: searchIds } } : {};
 
     const locationFilter = location
       ? { defaultLocation: { equals: location, mode: "insensitive" as const } }
@@ -281,18 +288,28 @@ export class IngredientService {
   }
 
   async search(query: string, userId?: number): Promise<Ingredient[]> {
-    const statusFilter = userId
-      ? { OR: [{ status: "GLOBAL" }, { createdByUserId: userId }] }
-      : { status: "GLOBAL" };
+    const pattern = `%${query}%`;
+    // Búsqueda insensible a tildes usando unaccent (extensión PostgreSQL)
+    let rows: { id: number }[];
+    if (userId) {
+      rows = await prisma.$queryRaw<{ id: number }[]>(
+        Prisma.sql`SELECT id FROM "Ingredient"
+          WHERE unaccent(lower(name)) LIKE unaccent(lower(${pattern}))
+            AND (status = 'GLOBAL' OR "createdByUserId" = ${userId})
+          ORDER BY name ASC LIMIT 10`
+      );
+    } else {
+      rows = await prisma.$queryRaw<{ id: number }[]>(
+        Prisma.sql`SELECT id FROM "Ingredient"
+          WHERE unaccent(lower(name)) LIKE unaccent(lower(${pattern}))
+            AND status = 'GLOBAL'
+          ORDER BY name ASC LIMIT 10`
+      );
+    }
+    const ids = rows.map((r) => r.id);
+    if (ids.length === 0) return [];
     const results = await prisma.ingredient.findMany({
-      where: {
-        ...statusFilter,
-        name: {
-          contains: query.toLowerCase(),
-          mode: "insensitive",
-        },
-      },
-      take: 10,
+      where: { id: { in: ids } },
       orderBy: { name: "asc" },
       include: ingredientInclude,
     });

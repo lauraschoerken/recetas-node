@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import {
   HomeItem,
   CreateHomeItemDto,
@@ -979,14 +979,24 @@ export class HomeItemService {
     if (filters.location) where.location = filters.location;
     if (filters.addedByUserId) where.userId = filters.addedByUserId;
     if (filters.query) {
+      const pattern = `%${filters.query}%`;
+      // Búsqueda insensible a tildes usando unaccent (extensión PostgreSQL)
+      const [matchingIngredients, matchingRecipes] = await Promise.all([
+        prisma.$queryRaw<{ id: number }[]>(
+          Prisma.sql`SELECT id FROM "Ingredient" WHERE unaccent(lower(name)) LIKE unaccent(lower(${pattern}))`
+        ),
+        prisma.$queryRaw<{ id: number }[]>(
+          Prisma.sql`SELECT id FROM "Recipe" WHERE unaccent(lower(title)) LIKE unaccent(lower(${pattern}))`
+        ),
+      ]);
+      const ingredientIds = matchingIngredients.map((r) => r.id);
+      const recipeIds = matchingRecipes.map((r) => r.id);
       where.OR = [
-        {
-          ingredient: {
-            name: { contains: filters.query, mode: "insensitive" },
-          },
-        },
-        { recipe: { title: { contains: filters.query, mode: "insensitive" } } },
+        ...(ingredientIds.length > 0 ? [{ ingredientId: { in: ingredientIds } }] : []),
+        ...(recipeIds.length > 0 ? [{ recipeId: { in: recipeIds } }] : []),
       ];
+      // Si ninguno coincide, forzar sin resultados
+      if (where.OR.length === 0) where.OR = [{ id: -1 }];
     }
 
     const items = await prisma.homeItem.findMany({

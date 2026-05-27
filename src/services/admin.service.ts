@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
@@ -7,14 +7,19 @@ export class AdminService {
     opts: { page?: number; pageSize?: number; search?: string } = {},
   ) {
     const { page = 1, pageSize = 20, search = "" } = opts;
-    const where = search
-      ? {
-          OR: [
-            { name: { contains: search, mode: "insensitive" as const } },
-            { email: { contains: search, mode: "insensitive" as const } },
-          ],
-        }
-      : undefined;
+
+    // Búsqueda insensible a tildes usando unaccent (extensión PostgreSQL)
+    let where: object | undefined;
+    if (search) {
+      const pattern = `%${search}%`;
+      const rows = await prisma.$queryRaw<{ id: number }[]>(
+        Prisma.sql`SELECT id FROM "User"
+          WHERE unaccent(lower(name)) LIKE unaccent(lower(${pattern}))
+             OR unaccent(lower(email)) LIKE unaccent(lower(${pattern}))`
+      );
+      const ids = rows.map((r) => r.id);
+      where = { id: { in: ids } };
+    }
 
     const [data, total] = await prisma.$transaction([
       prisma.user.findMany({

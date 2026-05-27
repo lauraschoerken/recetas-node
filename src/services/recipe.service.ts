@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import {
   CreateRecipeDto,
   UpdateRecipeDto,
@@ -137,27 +137,42 @@ export class RecipeService {
       : "createdAt";
     const safeSortOrder = sortOrder === "asc" ? "asc" : "desc";
 
+    // Búsqueda por título insensible a tildes
+    let searchIds: number[] | null = null;
+    if (search) {
+      const pattern = `%${search}%`;
+      const rows = await prisma.$queryRaw<{ id: number }[]>(
+        Prisma.sql`SELECT id FROM "Recipe" WHERE unaccent(lower(title)) LIKE unaccent(lower(${pattern}))`
+      );
+      searchIds = rows.map((r) => r.id);
+    }
+
+    // Búsqueda por ingrediente insensible a tildes
+    let ingredientIds: number[] | null = null;
+    if (ingredient) {
+      const pattern = `%${ingredient}%`;
+      const rows = await prisma.$queryRaw<{ id: number }[]>(
+        Prisma.sql`SELECT id FROM "Ingredient" WHERE unaccent(lower(name)) LIKE unaccent(lower(${pattern}))`
+      );
+      ingredientIds = rows.map((r) => r.id);
+    }
+
     const where = {
       AND: [
         visibilityFilter,
-        ...(search
-          ? [{ title: { contains: search, mode: "insensitive" as const } }]
+        ...(searchIds !== null
+          ? [{ id: { in: searchIds } }]
           : []),
-        ...(ingredient
-          ? [
-              {
-                ingredients: {
-                  some: {
-                    ingredient: {
-                      name: {
-                        contains: ingredient,
-                        mode: "insensitive" as const,
-                      },
-                    },
+        ...(ingredientIds !== null
+          ? ingredientIds.length > 0
+            ? [
+                {
+                  ingredients: {
+                    some: { ingredientId: { in: ingredientIds } },
                   },
                 },
-              },
-            ]
+              ]
+            : [{ id: -1 }] // sin coincidencias → sin resultados
           : []),
         ...(difficulty
           ? [

@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
@@ -50,9 +50,16 @@ export class ProductService {
   }
 
   async search(userId: number, query: string): Promise<ProductDto[]> {
+    // Búsqueda insensible a tildes usando unaccent (extensión PostgreSQL)
+    const pattern = `%${query}%`;
+    const rows = await prisma.$queryRaw<{ id: number }[]>(
+      Prisma.sql`SELECT id FROM "Product" WHERE unaccent(lower(name)) LIKE unaccent(lower(${pattern}))`
+    );
+    const ids = rows.map((r) => r.id);
+    if (ids.length === 0) return [];
     const products = await prisma.product.findMany({
       where: {
-        name: { contains: query, mode: "insensitive" },
+        id: { in: ids },
         OR: [{ status: "GLOBAL" }, { createdByUserId: userId }],
         NOT: { hiddenByUsers: { some: { userId } } },
       },
