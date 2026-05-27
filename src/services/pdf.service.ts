@@ -588,6 +588,7 @@ type ExportRecipeMeta = {
   servings: number;
   cookTimeMinutes?: number | null;
   difficulty?: string | null;
+  isPublic?: boolean;
   ingredients: ExportIngredientMeta[];
   requiredRecipes: ExportRequiredRecipeMeta[];
 };
@@ -841,6 +842,7 @@ function buildRecipeExportMeta(
     servings: sanitizeNumber(recipe.servings, 4),
     cookTimeMinutes: recipe.cookTimeMinutes ?? null,
     difficulty: recipe.difficulty ?? null,
+    isPublic: recipe.isPublic ?? false,
     ingredients,
     requiredRecipes,
   };
@@ -1683,12 +1685,50 @@ export const pdfService = {
   buildImportPayload(
     entries: { recipe: any; selectedOptions?: Record<number, number> }[],
   ): ExportPdfPayload {
+    const recipesMeta: ExportRecipeMeta[] = [];
+    const includedTitles = new Set<string>();
+
+    for (const e of entries) {
+      const meta = buildRecipeExportMeta(e.recipe, e.selectedOptions || {});
+      recipesMeta.push(meta);
+      includedTitles.add(meta.title);
+    }
+
+    // Include full sub-recipe data so the import is self-contained
+    for (const e of entries) {
+      for (const comp of e.recipe.components || []) {
+        for (const opt of comp.options || []) {
+          if (opt.recipe && !includedTitles.has(opt.recipe.title)) {
+            const subIngredients: ExportIngredientMeta[] = [];
+            for (const ri of opt.recipe.ingredients || []) {
+              subIngredients.push({
+                name: ri.ingredient?.name || "",
+                quantity: sanitizeNumber(ri.quantity, 0),
+                unit: ri.unit || ri.ingredient?.unit || "g",
+              });
+            }
+            recipesMeta.push({
+              title: opt.recipe.title,
+              description: opt.recipe.description || null,
+              instructions: opt.recipe.instructions || null,
+              imageUrl: opt.recipe.imageUrl || null,
+              servings: sanitizeNumber(opt.recipe.servings, 4),
+              cookTimeMinutes: opt.recipe.cookTimeMinutes ?? null,
+              difficulty: opt.recipe.difficulty ?? null,
+              isPublic: opt.recipe.isPublic ?? false,
+              ingredients: subIngredients,
+              requiredRecipes: [],
+            });
+            includedTitles.add(opt.recipe.title);
+          }
+        }
+      }
+    }
+
     return {
       app: "recetas-app",
       version: 2,
-      recipes: entries.map((e) =>
-        buildRecipeExportMeta(e.recipe, e.selectedOptions || {}),
-      ),
+      recipes: recipesMeta,
     };
   },
 
@@ -1741,7 +1781,13 @@ export const pdfService = {
                   select: {
                     id: true,
                     title: true,
+                    description: true,
+                    instructions: true,
+                    imageUrl: true,
                     servings: true,
+                    cookTimeMinutes: true,
+                    difficulty: true,
+                    isPublic: true,
                     ingredients: {
                       include: {
                         ingredient: { include: { variants: true } },

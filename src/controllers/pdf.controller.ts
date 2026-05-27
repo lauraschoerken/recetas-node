@@ -411,7 +411,10 @@ export class PdfController {
           const name = (ing.name || "").trim();
           if (!name) continue;
           let dbIng = await prisma.ingredient.findFirst({
-            where: { name, status: "GLOBAL" },
+            where: {
+              name,
+              OR: [{ status: "GLOBAL" }, { createdByUserId: req.userId! }],
+            },
           });
           if (!dbIng) {
             dbIng = await prisma.ingredient.create({
@@ -442,6 +445,7 @@ export class PdfController {
             servings: Number(r.servings) || 4,
             cookTimeMinutes: r.cookTimeMinutes ?? null,
             difficulty: r.difficulty ?? null,
+            isPublic: r.isPublic ?? false,
             userId: req.userId!,
             ingredients:
               uniqueIngredientRows.length > 0
