@@ -397,6 +397,40 @@ export class ShoppingController {
 
   /**
    * @swagger
+   * /api/shopping-list/manual/{ingredientId}:
+   *   delete:
+   *     tags: [Lista de Compra]
+   *     summary: Eliminar item manual de la lista de la compra
+   *     parameters:
+   *       - in: path
+   *         name: ingredientId
+   *         required: true
+   *         schema:
+   *           type: integer
+   *     responses:
+   *       204:
+   *         description: Item eliminado
+   *       404:
+   *         description: Item no encontrado
+   */
+  @Delete("/shopping-list/manual/:ingredientId")
+  @HttpCode(204)
+  async deleteManualShoppingItem(
+    @Param("ingredientId") ingredientId: number,
+    @Req() req: AuthRequest,
+  ) {
+    const deleted = await shoppingService.deleteManualItem(
+      ingredientId,
+      req.userId!,
+    );
+    if (!deleted) {
+      throw { httpCode: 404, message: "Item no encontrado" };
+    }
+    return null;
+  }
+
+  /**
+   * @swagger
    * /api/shopping-list/add-product:
    *   post:
    *     tags: [Lista de Compra]
