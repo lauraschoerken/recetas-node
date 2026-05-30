@@ -972,15 +972,25 @@ export class ShoppingService {
     // Obtener inventario actual (convertido a equivalente crudo)
     const homeItems = await prisma.homeItem.findMany({
       where: homeWhere,
-      include: { variant: true },
+      include: {
+        variant: true,
+        ingredient: { include: { conversions: true } },
+      },
     });
     const homeQuantities = new Map<number, number>();
     for (const item of homeItems) {
-      if (item.ingredientId) {
-        // Convertir inventario a equivalente crudo
-        // 300g cocinado (wf=2.5) = 120g crudo equivalente
+      if (item.ingredientId && item.ingredient) {
         const weightFactor = item.variant?.weightFactor || 1;
-        const rawEquivalent = item.quantity / weightFactor;
+        // Convertir la cantidad del home item a unidad base (g o ml) antes de comparar
+        // Ej: 1 "kilo" → 1000g, 500 "ml" → 500ml, 1 "bote de 200ml" → 200ml
+        const quantityInBase = this.convertToBaseUnit(
+          item.quantity,
+          item.unit,
+          item.ingredient,
+        );
+        // Dividir por weightFactor para obtener equivalente crudo
+        // Ej: 300g cocinado (wf=2.5) = 120g crudo equivalente
+        const rawEquivalent = quantityInBase / weightFactor;
         const current = homeQuantities.get(item.ingredientId) || 0;
         homeQuantities.set(item.ingredientId, current + rawEquivalent);
       }
