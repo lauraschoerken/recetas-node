@@ -977,16 +977,54 @@ export class ShoppingService {
         ingredient: { include: { conversions: true } },
       },
     });
+
+    // Cargar overrides de conversión del usuario para los home items
+    // (las conversiones como "botella", "bolsa", etc. se guardan en IngredientConversionUserOverride)
+    const homeIngredientIds = homeItems
+      .filter((i) => i.ingredientId !== null)
+      .map((i) => i.ingredientId as number);
+    const homeConvOverrideMap = new Map<
+      number,
+      { unitName: string; gramsPerUnit: number }[]
+    >();
+    if (homeIngredientIds.length > 0) {
+      const homeConvOverrides =
+        await prisma.ingredientConversionUserOverride.findMany({
+          where: { userId, ingredientId: { in: homeIngredientIds } },
+        });
+      for (const co of homeConvOverrides) {
+        if (!homeConvOverrideMap.has(co.ingredientId))
+          homeConvOverrideMap.set(co.ingredientId, []);
+        homeConvOverrideMap
+          .get(co.ingredientId)!
+          .push({ unitName: co.unitName, gramsPerUnit: co.gramsPerUnit });
+      }
+    }
+
     const homeQuantities = new Map<number, number>();
     for (const item of homeItems) {
       if (item.ingredientId && item.ingredient) {
         const weightFactor = item.variant?.weightFactor || 1;
+
+        // Combinar conversiones globales + overrides del usuario para convertir la unidad del home item
+        const globalConversions = (item.ingredient as any).conversions || [];
+        const globalUnitNames = new Set(
+          globalConversions.map((c: any) => c.unitName.toLowerCase()),
+        );
+        const extraConversions = (
+          homeConvOverrideMap.get(item.ingredientId) ?? []
+        ).filter((co) => !globalUnitNames.has(co.unitName.toLowerCase()));
+        const mergedIngredient = {
+          ...item.ingredient,
+          conversions: [...globalConversions, ...extraConversions],
+        };
+
         // Convertir la cantidad del home item a unidad base (g o ml) antes de comparar
-        // Ej: 1 "kilo" → 1000g, 500 "ml" → 500ml, 1 "bote de 200ml" → 200ml
+        // Ej: 0.5 "botella" (1 botella=1000ml) → 500ml, 1 "kilo" → 1000g
         const quantityInBase = this.convertToBaseUnit(
           item.quantity,
           item.unit,
-          item.ingredient,
+          mergedIngredient,
         );
         // Dividir por weightFactor para obtener equivalente crudo
         // Ej: 300g cocinado (wf=2.5) = 120g crudo equivalente
