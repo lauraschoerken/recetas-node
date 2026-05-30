@@ -913,6 +913,72 @@ export class ShoppingService {
       }
     }
 
+    // Fusionar items manuales (añadidos desde "Añadir a la compra") en ingredientNeeds ANTES del
+    // cálculo de stock en casa, para que también se beneficien de la deducción de inventario
+    const earlyManualItems = await prisma.shoppingItem.findMany({
+      where: {
+        ...(sharing.shareShopping && sharing.householdId
+          ? { householdId: sharing.householdId }
+          : { userId }),
+        weekPlanId: null,
+        purchased: false,
+        ingredientId: { not: null },
+      },
+      include: { ingredient: { include: { conversions: true } } },
+    });
+
+    // Cargar overrides de conversión para items manuales (pueden usar unidades como 'kilo', 'botella', etc.)
+    const earlyManualIngIds = earlyManualItems
+      .filter((i) => i.ingredientId !== null)
+      .map((i) => i.ingredientId as number);
+    const earlyManualConvOverrideMap = new Map<
+      number,
+      { unitName: string; gramsPerUnit: number }[]
+    >();
+    if (earlyManualIngIds.length > 0) {
+      const earlyManualConvOverrides =
+        await prisma.ingredientConversionUserOverride.findMany({
+          where: { userId, ingredientId: { in: earlyManualIngIds } },
+        });
+      for (const co of earlyManualConvOverrides) {
+        if (!earlyManualConvOverrideMap.has(co.ingredientId))
+          earlyManualConvOverrideMap.set(co.ingredientId, []);
+        earlyManualConvOverrideMap
+          .get(co.ingredientId)!
+          .push({ unitName: co.unitName, gramsPerUnit: co.gramsPerUnit });
+      }
+    }
+
+    for (const item of earlyManualItems) {
+      if (!item.ingredientId || !item.ingredient) continue;
+      const globalConversions = (item.ingredient as any).conversions || [];
+      const globalUnitNames = new Set(
+        globalConversions.map((c: any) => c.unitName.toLowerCase()),
+      );
+      const extraConversions = (
+        earlyManualConvOverrideMap.get(item.ingredientId) ?? []
+      ).filter((co) => !globalUnitNames.has(co.unitName.toLowerCase()));
+      const mergedIngredient = {
+        ...item.ingredient,
+        conversions: [...globalConversions, ...extraConversions],
+      };
+      const quantityInBase = this.convertToBaseUnit(
+        item.quantity,
+        item.unit,
+        mergedIngredient,
+      );
+      const existing = ingredientNeeds.get(item.ingredientId);
+      if (existing) {
+        existing.rawEquivalent += quantityInBase;
+      } else {
+        ingredientNeeds.set(item.ingredientId, {
+          rawEquivalent: quantityInBase,
+          name: item.ingredient.name,
+          ingredientData: item.ingredient,
+        });
+      }
+    }
+
     // Aplicar overrides del usuario a preferredUnit y conversiones (se guardan en tablas de override, no en Ingredient)
     const ingredientIds = Array.from(ingredientNeeds.keys());
     if (ingredientIds.length > 0) {
@@ -1068,7 +1134,8 @@ export class ShoppingService {
         name,
         unit: baseUnit,
         totalQuantity: Math.round(rawEquivalent * 10) / 10,
-        quantityAtHome: Math.round(atHomeRaw * 10) / 10,
+        quantityAtHome:
+          Math.round(Math.min(rawEquivalent, atHomeRaw) * 10) / 10,
         quantityToBuy: Math.round(toBuyRaw * 10) / 10,
         preferredUnit,
         preferredQuantity,
@@ -1083,147 +1150,10 @@ export class ShoppingService {
       .filter((item) => item.quantityToBuy > 0)
       .sort((a, b) => a.name.localeCompare(b.name));
 
-    // TambiÃ©n incluir items manuales de la lista de compra (aÃ±adidos desde alertas, etc.)
-    const manualItems = await prisma.shoppingItem.findMany({
-      where: {
-        ...(sharing.shareShopping && sharing.householdId
-          ? { householdId: sharing.householdId }
-          : { userId }),
-        weekPlanId: null,
-        purchased: false,
-      },
-      include: {
-        ingredient: {
-          include: {
-            conversions: true,
-          },
-        },
-      },
-    });
-
-    // Aplicar overrides del usuario a los items manuales
-    const manualIngredientIds = manualItems
-      .filter((i) => i.ingredientId !== null)
-      .map((i) => i.ingredientId as number);
-    const manualOverrideMap = new Map<number, string | null>();
-    const manualConvOverrideMap = new Map<
-      number,
-      { unitName: string; gramsPerUnit: number }[]
-    >();
-    if (manualIngredientIds.length > 0) {
-      const [manualIngOverrides, manualConvOverrides] = await Promise.all([
-        prisma.ingredientUserOverride.findMany({
-          where: { userId, ingredientId: { in: manualIngredientIds } },
-        }),
-        prisma.ingredientConversionUserOverride.findMany({
-          where: { userId, ingredientId: { in: manualIngredientIds } },
-        }),
-      ]);
-      for (const o of manualIngOverrides) {
-        if (o.preferredUnit !== null && o.preferredUnit !== undefined) {
-          manualOverrideMap.set(o.ingredientId, o.preferredUnit);
-        }
-      }
-      const convGrouped = new Map<
-        number,
-        { unitName: string; gramsPerUnit: number }[]
-      >();
-      for (const co of manualConvOverrides) {
-        if (!convGrouped.has(co.ingredientId))
-          convGrouped.set(co.ingredientId, []);
-        convGrouped
-          .get(co.ingredientId)!
-          .push({ unitName: co.unitName, gramsPerUnit: co.gramsPerUnit });
-      }
-      for (const [ingId, convs] of convGrouped) {
-        manualConvOverrideMap.set(ingId, convs);
-      }
-    }
-
-    for (const item of manualItems) {
-      const existing = resultList.find(
-        (r) => r.ingredientId === item.ingredientId,
-      );
-      const globalConversions: { unitName: string; gramsPerUnit: number }[] =
-        (item.ingredient as any)?.conversions || [];
-      const userConvOverrides = item.ingredientId
-        ? (manualConvOverrideMap.get(item.ingredientId) ?? [])
-        : [];
-      const globalUnitNames = new Set(
-        globalConversions.map((c) => c.unitName.toLowerCase()),
-      );
-      const extraConversions = userConvOverrides.filter(
-        (co) => !globalUnitNames.has(co.unitName.toLowerCase()),
-      );
-      const ingConversions = [...globalConversions, ...extraConversions];
-      const ingPreferredUnit =
-        (item.ingredientId && manualOverrideMap.has(item.ingredientId)
-          ? manualOverrideMap.get(item.ingredientId)
-          : (item.ingredient as any)?.preferredUnit) ?? null;
-      // La unidad base del ingrediente (g o ml)
-      const ingBaseUnit: string = (item.ingredient as any)?.unit ?? item.unit;
-
-      // Normalizar cantidad a unidad base para cálculos consistentes
-      let quantityInBase = item.quantity;
-      if (item.unit.toLowerCase() !== ingBaseUnit.toLowerCase()) {
-        if (item.unit === "kg" && ingBaseUnit === "g") {
-          quantityInBase = item.quantity * 1000;
-        } else if (item.unit === "l" && ingBaseUnit === "ml") {
-          quantityInBase = item.quantity * 1000;
-        } else {
-          const unitConv = ingConversions.find(
-            (c: any) => c.unitName.toLowerCase() === item.unit.toLowerCase(),
-          );
-          if (unitConv && unitConv.gramsPerUnit > 0) {
-            quantityInBase = item.quantity * unitConv.gramsPerUnit;
-          }
-        }
-      }
-
-      if (existing) {
-        existing.totalQuantity += quantityInBase;
-        existing.quantityToBuy += quantityInBase;
-        // Recalcular preferredQuantity con la cantidad actualizada
-        if (existing.preferredUnit) {
-          const conv = ingConversions.find(
-            (c: any) =>
-              c.unitName.toLowerCase() ===
-              existing.preferredUnit!.toLowerCase(),
-          );
-          if (conv && conv.gramsPerUnit > 0) {
-            existing.preferredQuantity = Math.ceil(
-              existing.quantityToBuy / conv.gramsPerUnit,
-            );
-          }
-        }
-      } else if (item.ingredientId && item.ingredient) {
-        // Calcular preferredQuantity del item manual usando la unidad preferida del ingrediente
-        let manualPreferredQty: number | null = null;
-        if (ingPreferredUnit) {
-          const conv = ingConversions.find(
-            (c: any) =>
-              c.unitName.toLowerCase() === ingPreferredUnit.toLowerCase(),
-          );
-          if (conv && conv.gramsPerUnit > 0) {
-            manualPreferredQty = Math.ceil(quantityInBase / conv.gramsPerUnit);
-          }
-        }
-        resultList.push({
-          ingredientId: item.ingredientId,
-          name: item.ingredient.name,
-          unit: ingBaseUnit, // Siempre unidad base para consistencia con items de receta
-          totalQuantity: quantityInBase,
-          quantityAtHome: 0,
-          quantityToBuy: quantityInBase,
-          preferredUnit: ingPreferredUnit,
-          preferredQuantity: manualPreferredQty,
-          conversions: ingConversions.map((c: any) => ({
-            unitName: c.unitName,
-            gramsPerUnit: c.gramsPerUnit,
-          })),
-        });
-      }
-    }
+    // NOTA: los items manuales ya fueron fusionados en ingredientNeeds antes del cálculo de
+    // stock en casa, por lo que están incluidos en resultList con deducción de inventario aplicada.
+    // Ya no se necesita un bucle separado para ellos.
+    // Los items manuales con productId (sin ingredientId) no aplican aquí.
 
     return resultList.sort((a, b) => a.name.localeCompare(b.name));
   }
@@ -1586,6 +1516,27 @@ export class ShoppingService {
       );
     }
 
+    // Cargar overrides de conversión del usuario para los ingredientes que se van a deducir
+    // (conversiones como "botella", "bolsa", etc. se guardan en IngredientConversionUserOverride)
+    const neededIngredientIds = Array.from(ingredientsNeeded.keys());
+    const cookConvOverrideMap = new Map<
+      number,
+      { unitName: string; gramsPerUnit: number }[]
+    >();
+    if (neededIngredientIds.length > 0) {
+      const cookConvOverrides =
+        await prisma.ingredientConversionUserOverride.findMany({
+          where: { userId, ingredientId: { in: neededIngredientIds } },
+        });
+      for (const co of cookConvOverrides) {
+        if (!cookConvOverrideMap.has(co.ingredientId))
+          cookConvOverrideMap.set(co.ingredientId, []);
+        cookConvOverrideMap
+          .get(co.ingredientId)!
+          .push({ unitName: co.unitName, gramsPerUnit: co.gramsPerUnit });
+      }
+    }
+
     for (const [ingredientId, needed] of ingredientsNeeded) {
       let remainingToDeduct = needed.quantity;
 
@@ -1599,7 +1550,16 @@ export class ShoppingService {
         if (remainingToDeduct <= 0) break;
 
         const baseUnit = item.ingredient?.unit || "g";
-        const conversions = item.ingredient?.conversions || [];
+        // Combinar conversiones globales + overrides del usuario para convertir correctamente
+        const globalConversions: any[] = item.ingredient?.conversions || [];
+        const globalUnitNames = new Set(
+          globalConversions.map((c: any) => c.unitName.toLowerCase()),
+        );
+        const extraConversions = (
+          cookConvOverrideMap.get(ingredientId) ?? []
+        ).filter((co) => !globalUnitNames.has(co.unitName.toLowerCase()));
+        const conversions = [...globalConversions, ...extraConversions];
+
         const itemQuantityInBase = this.getQuantityInBaseUnit(
           item.quantity,
           item.unit,
@@ -1613,9 +1573,23 @@ export class ShoppingService {
           ingredientsDeducted++;
         } else {
           const newQuantityInBase = itemQuantityInBase - remainingToDeduct;
+          remainingToDeduct = 0;
+          // Mantener la unidad original del home item si es posible
+          // Ej: 1 botella → usar 500ml → queda 0.5 botella (no 500ml)
+          let newQuantity = newQuantityInBase;
+          let newUnit = baseUnit;
+          if (item.unit.toLowerCase() !== baseUnit.toLowerCase()) {
+            const conv = conversions.find(
+              (c: any) => c.unitName.toLowerCase() === item.unit.toLowerCase(),
+            );
+            if (conv && conv.gramsPerUnit > 0) {
+              newQuantity = newQuantityInBase / conv.gramsPerUnit;
+              newUnit = item.unit;
+            }
+          }
           await prisma.homeItem.update({
             where: { id: item.id },
-            data: { quantity: newQuantityInBase, unit: baseUnit },
+            data: { quantity: newQuantity, unit: newUnit },
           });
           ingredientsDeducted++;
           remainingToDeduct = 0;

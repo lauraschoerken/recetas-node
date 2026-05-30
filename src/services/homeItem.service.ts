@@ -93,10 +93,19 @@ export class HomeItemService {
     const { meals, preps, ingredients } =
       await this.getPlannedServingsMap(userId);
 
-    // Calcular consumo por item de ingrediente
+    // Calcular consumo por item de ingrediente (con conversión de unidades personalizadas)
+    const homeIngIds = [
+      ...new Set(
+        items
+          .filter((i) => i.ingredientId)
+          .map((i) => i.ingredientId as number),
+      ),
+    ];
+    const unitConversions = await this.loadUnitConversions(homeIngIds, userId);
     const itemConsumption = this.calculateIngredientConsumption(
       items,
       ingredients,
+      unitConversions,
     );
 
     return items.map((item) => {
@@ -133,9 +142,39 @@ export class HomeItemService {
     });
   }
 
+  private async loadUnitConversions(
+    ingredientIds: number[],
+    userId: number,
+  ): Promise<Map<number, { unitName: string; gramsPerUnit: number }[]>> {
+    if (ingredientIds.length === 0) return new Map();
+    const [globalConvs, userConvs] = await Promise.all([
+      prisma.unitConversion.findMany({
+        where: { ingredientId: { in: ingredientIds } },
+      }),
+      prisma.ingredientConversionUserOverride.findMany({
+        where: { userId, ingredientId: { in: ingredientIds } },
+      }),
+    ]);
+    const map = new Map<number, { unitName: string; gramsPerUnit: number }[]>();
+    for (const c of [...globalConvs, ...userConvs]) {
+      const list = map.get(c.ingredientId) || [];
+      if (
+        !list.find((x) => x.unitName.toLowerCase() === c.unitName.toLowerCase())
+      ) {
+        list.push({ unitName: c.unitName, gramsPerUnit: c.gramsPerUnit });
+      }
+      map.set(c.ingredientId, list);
+    }
+    return map;
+  }
+
   private calculateIngredientConsumption(
     items: any[],
     ingredients: Map<number, { rawNeeded: number; cookedWeightFactor: number }>,
+    unitConversions: Map<
+      number,
+      { unitName: string; gramsPerUnit: number }[]
+    > = new Map(),
   ): Map<number, number> {
     const consumption = new Map<number, number>(); // itemId -> cantidad a consumir
 
@@ -183,21 +222,52 @@ export class HomeItemService {
         const itemWF = item.variant?.weightFactor || 1;
         const itemQty = item.quantity;
 
-        // Convertir la cantidad del item a crudo equivalente
-        const itemRawEquiv = itemQty / itemWF;
+        // Convertir a unidad base (g/ml) teniendo en cuenta unidades personalizadas (botella, patata mediana...)
+        const ingConversions = unitConversions.get(ingredientId) || [];
+        let itemBaseQty = itemQty;
+        if (item.unit) {
+          const unitLower = item.unit.toLowerCase();
+          if (unitLower === "kg") {
+            itemBaseQty = itemQty * 1000;
+          } else if (unitLower === "l") {
+            itemBaseQty = itemQty * 1000;
+          } else if (unitLower !== "g" && unitLower !== "ml") {
+            const conv = ingConversions.find(
+              (c) => c.unitName.toLowerCase() === unitLower,
+            );
+            if (conv && conv.gramsPerUnit > 0) {
+              itemBaseQty = itemQty * conv.gramsPerUnit;
+            }
+          }
+        }
+
+        // Convertir a crudo equivalente (variante cocinada)
+        const itemRawEquiv = itemBaseQty / itemWF;
 
         // ¿Cuánto crudo podemos cubrir con este item?
         const rawFromThisItem = Math.min(rawNeeded, itemRawEquiv);
 
-        // Convertir de vuelta a la unidad del item
-        const consumeFromItem = rawFromThisItem * itemWF;
+        // Convertir de vuelta a la unidad original del item para mostrar en UI
+        const rawConsumedInBase = rawFromThisItem * itemWF;
+        let consumeFromItem = rawConsumedInBase;
+        if (item.unit) {
+          const unitLower = item.unit.toLowerCase();
+          if (unitLower === "kg") {
+            consumeFromItem = rawConsumedInBase / 1000;
+          } else if (unitLower === "l") {
+            consumeFromItem = rawConsumedInBase / 1000;
+          } else if (unitLower !== "g" && unitLower !== "ml") {
+            const conv = ingConversions.find(
+              (c) => c.unitName.toLowerCase() === unitLower,
+            );
+            if (conv && conv.gramsPerUnit > 0) {
+              consumeFromItem = rawConsumedInBase / conv.gramsPerUnit;
+            }
+          }
+        }
 
         consumption.set(item.id, consumeFromItem);
         rawNeeded -= rawFromThisItem;
-
-        console.log(
-          `[DEBUG] Item ${item.id} (${item.variant?.name || "crudo"}, wf=${itemWF}): qty=${itemQty}, rawEquiv=${itemRawEquiv}, consume=${consumeFromItem}, rawRemaining=${rawNeeded}`,
-        );
       }
     }
 
@@ -230,9 +300,18 @@ export class HomeItemService {
       await this.getPlannedServingsMap(userId);
 
     // Calcular consumo usando TODOS los items (para distribuir correctamente)
+    const homeIngIds = [
+      ...new Set(
+        allItems
+          .filter((i) => i.ingredientId)
+          .map((i) => i.ingredientId as number),
+      ),
+    ];
+    const unitConversions = await this.loadUnitConversions(homeIngIds, userId);
     const itemConsumption = this.calculateIngredientConsumption(
       allItems,
       ingredients,
+      unitConversions,
     );
 
     return locationItems.map((item) => {
@@ -983,16 +1062,18 @@ export class HomeItemService {
       // Búsqueda insensible a tildes usando unaccent (extensión PostgreSQL)
       const [matchingIngredients, matchingRecipes] = await Promise.all([
         prisma.$queryRaw<{ id: number }[]>(
-          Prisma.sql`SELECT id FROM "Ingredient" WHERE unaccent(lower(name)) LIKE unaccent(lower(${pattern}))`
+          Prisma.sql`SELECT id FROM "Ingredient" WHERE unaccent(lower(name)) LIKE unaccent(lower(${pattern}))`,
         ),
         prisma.$queryRaw<{ id: number }[]>(
-          Prisma.sql`SELECT id FROM "Recipe" WHERE unaccent(lower(title)) LIKE unaccent(lower(${pattern}))`
+          Prisma.sql`SELECT id FROM "Recipe" WHERE unaccent(lower(title)) LIKE unaccent(lower(${pattern}))`,
         ),
       ]);
       const ingredientIds = matchingIngredients.map((r) => r.id);
       const recipeIds = matchingRecipes.map((r) => r.id);
       where.OR = [
-        ...(ingredientIds.length > 0 ? [{ ingredientId: { in: ingredientIds } }] : []),
+        ...(ingredientIds.length > 0
+          ? [{ ingredientId: { in: ingredientIds } }]
+          : []),
         ...(recipeIds.length > 0 ? [{ recipeId: { in: recipeIds } }] : []),
       ];
       // Si ninguno coincide, forzar sin resultados
@@ -1007,9 +1088,21 @@ export class HomeItemService {
 
     const { meals, preps, ingredients } =
       await this.getPlannedServingsMap(userId);
+    const searchIngIds = [
+      ...new Set(
+        items
+          .filter((i) => i.ingredientId)
+          .map((i) => i.ingredientId as number),
+      ),
+    ];
+    const unitConversions = await this.loadUnitConversions(
+      searchIngIds,
+      userId,
+    );
     const itemConsumption = this.calculateIngredientConsumption(
       items,
       ingredients,
+      unitConversions,
     );
 
     let result: HomeItemWithPlanned[] = items.map((item) => {
