@@ -408,6 +408,26 @@ export class HomeItemService {
       { rawNeeded: number; cookedWeightFactor: number }
     >();
 
+    // Platos ya cocinados disponibles en casa: si el plan semanal puede cubrirse con el plato
+    // preparado, no se deben contar los ingredientes crudos (evita doble deducción)
+    const homeWhere =
+      ctx.useShared && ctx.householdId
+        ? { householdId: ctx.householdId }
+        : ({ userId: { in: ctx.memberUserIds } } as any);
+    const recipeHomeItems = await prisma.homeItem.findMany({
+      where: { ...homeWhere, recipeId: { not: null } },
+      select: { recipeId: true, quantity: true },
+    });
+    const remainingCookedServings = new Map<number, number>();
+    for (const hi of recipeHomeItems) {
+      if (hi.recipeId) {
+        remainingCookedServings.set(
+          hi.recipeId,
+          (remainingCookedServings.get(hi.recipeId) || 0) + hi.quantity,
+        );
+      }
+    }
+
     for (const plan of futurePlans) {
       const isMeal = plan.type === "meal" && !plan.consumed;
 
@@ -420,83 +440,96 @@ export class HomeItemService {
 
       // Calculate ingredient needs from this meal
       if (isMeal && plan.recipe) {
-        const ratio = plan.servings / plan.recipe.servings;
-        console.log(
-          `[DEBUG] Plan: ${plan.recipe.title}, servings: ${plan.servings}/${plan.recipe.servings}, ratio: ${ratio}`,
+        // Si hay raciones ya cocinadas en casa, usarlas primero: no se necesitan ingredientes crudos
+        const recipeId = plan.recipeId!;
+        const availableCooked = remainingCookedServings.get(recipeId) || 0;
+        const servingsCoveredByHome = Math.min(plan.servings, availableCooked);
+        const servingsNeedingRaw = Math.max(
+          0,
+          plan.servings - servingsCoveredByHome,
+        );
+        remainingCookedServings.set(
+          recipeId,
+          Math.max(0, availableCooked - servingsCoveredByHome),
         );
 
-        // Direct ingredients
-        for (const ri of plan.recipe.ingredients || []) {
-          if (ri.ingredientId) {
-            // El variant indica en qué estado está la cantidad especificada
-            const variantWF = (ri as any).variant?.weightFactor || 1;
-            const specifiedQuantity = ri.quantity * ratio;
+        if (servingsNeedingRaw > 0) {
+          const ratio = servingsNeedingRaw / plan.recipe.servings;
 
-            // Convertir la cantidad a CRUDO equivalente
-            // Si variant es cocinado (wf > 1), dividir para obtener el equivalente crudo
-            const rawQuantity = specifiedQuantity / variantWF;
+          // Direct ingredients
+          for (const ri of plan.recipe.ingredients || []) {
+            if (ri.ingredientId) {
+              // El variant indica en qué estado está la cantidad especificada
+              const variantWF = (ri as any).variant?.weightFactor || 1;
+              const specifiedQuantity = ri.quantity * ratio;
 
-            console.log(
-              `[DEBUG] Direct ing: ${ri.ingredientId}, specifiedQty: ${specifiedQuantity}, variantWF: ${variantWF}, rawEquiv: ${rawQuantity}`,
-            );
+              // Convertir la cantidad a CRUDO equivalente
+              // Si variant es cocinado (wf > 1), dividir para obtener el equivalente crudo
+              const rawQuantity = specifiedQuantity / variantWF;
 
-            const current = ingredientNeeds.get(ri.ingredientId) || {
-              rawNeeded: 0,
-              cookedWeightFactor: variantWF,
-            };
-            ingredientNeeds.set(ri.ingredientId, {
-              rawNeeded: current.rawNeeded + rawQuantity,
-              cookedWeightFactor: variantWF,
-            });
-          }
-        }
-
-        // Component ingredients
-        for (const comp of plan.recipe.components || []) {
-          let selectedOption;
-
-          if (plan.selections && plan.selections.length > 0) {
-            const sel = plan.selections.find((s: any) =>
-              comp.options.some((o: any) => o.id === s.optionId),
-            );
-            if (sel) {
-              selectedOption = comp.options.find(
-                (o: any) => o.id === sel.optionId,
+              console.log(
+                `[DEBUG] Direct ing: ${ri.ingredientId}, specifiedQty: ${specifiedQuantity}, variantWF: ${variantWF}, rawEquiv: ${rawQuantity}`,
               );
-            } else if (comp.isOptional) {
-              continue;
+
+              const current = ingredientNeeds.get(ri.ingredientId) || {
+                rawNeeded: 0,
+                cookedWeightFactor: variantWF,
+              };
+              ingredientNeeds.set(ri.ingredientId, {
+                rawNeeded: current.rawNeeded + rawQuantity,
+                cookedWeightFactor: variantWF,
+              });
+            }
+          }
+
+          // Component ingredients
+          for (const comp of plan.recipe.components || []) {
+            let selectedOption;
+
+            if (plan.selections && plan.selections.length > 0) {
+              const sel = plan.selections.find((s: any) =>
+                comp.options.some((o: any) => o.id === s.optionId),
+              );
+              if (sel) {
+                selectedOption = comp.options.find(
+                  (o: any) => o.id === sel.optionId,
+                );
+              } else if (comp.isOptional) {
+                continue;
+              } else {
+                selectedOption =
+                  comp.options.find((o: any) => o.isDefault) || comp.options[0];
+              }
             } else {
               selectedOption =
                 comp.options.find((o: any) => o.isDefault) || comp.options[0];
+              if (comp.isOptional && !comp.defaultEnabled) continue;
             }
-          } else {
-            selectedOption =
-              comp.options.find((o: any) => o.isDefault) || comp.options[0];
-            if (comp.isOptional && !comp.defaultEnabled) continue;
+
+            if (selectedOption?.ingredientId) {
+              // El variant indica en qué estado está la cantidad especificada
+              const variantWF =
+                (selectedOption as any).variant?.weightFactor || 1;
+              const specifiedQuantity =
+                (selectedOption.quantity || 100) * ratio;
+
+              // Convertir a CRUDO equivalente
+              const rawQuantity = specifiedQuantity / variantWF;
+
+              console.log(
+                `[DEBUG] Component ${comp.name}: ing ${selectedOption.ingredientId}, specifiedQty: ${specifiedQuantity}, variantWF: ${variantWF}, rawEquiv: ${rawQuantity}`,
+              );
+
+              const current = ingredientNeeds.get(
+                selectedOption.ingredientId,
+              ) || { rawNeeded: 0, cookedWeightFactor: variantWF };
+              ingredientNeeds.set(selectedOption.ingredientId, {
+                rawNeeded: current.rawNeeded + rawQuantity,
+                cookedWeightFactor: variantWF,
+              });
+            }
           }
-
-          if (selectedOption?.ingredientId) {
-            // El variant indica en qué estado está la cantidad especificada
-            const variantWF =
-              (selectedOption as any).variant?.weightFactor || 1;
-            const specifiedQuantity = (selectedOption.quantity || 100) * ratio;
-
-            // Convertir a CRUDO equivalente
-            const rawQuantity = specifiedQuantity / variantWF;
-
-            console.log(
-              `[DEBUG] Component ${comp.name}: ing ${selectedOption.ingredientId}, specifiedQty: ${specifiedQuantity}, variantWF: ${variantWF}, rawEquiv: ${rawQuantity}`,
-            );
-
-            const current = ingredientNeeds.get(
-              selectedOption.ingredientId,
-            ) || { rawNeeded: 0, cookedWeightFactor: variantWF };
-            ingredientNeeds.set(selectedOption.ingredientId, {
-              rawNeeded: current.rawNeeded + rawQuantity,
-              cookedWeightFactor: variantWF,
-            });
-          }
-        }
+        } // cierre if (servingsNeedingRaw > 0)
       }
 
       // Para platos, contar las recetas dentro de las opciones
