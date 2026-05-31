@@ -284,19 +284,56 @@ export class ShoppingController {
    *   post:
    *     tags: [Plan Semanal]
    *     summary: Marcar entrada como consumida
+   *     description: Marca la comida como consumida. Soporta reparto entre miembros del hogar. Si se incluye `myPercentage` y `householdShares`, solo se descuenta del inventario la porción consumida y se crean registros de consumo para cada miembro.
    *     parameters:
    *       - in: path
    *         name: id
    *         required: true
    *         schema:
    *           type: integer
+   *     requestBody:
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               myPercentage:
+   *                 type: number
+   *                 example: 30
+   *                 description: Porcentaje que consume el usuario actual (0-100, por defecto 100)
+   *               householdShares:
+   *                 type: array
+   *                 description: Reparto para otros miembros del hogar
+   *                 items:
+   *                   type: object
+   *                   required: [userId, percentage]
+   *                   properties:
+   *                     userId:
+   *                       type: integer
+   *                       example: 2
+   *                     percentage:
+   *                       type: number
+   *                       example: 50
    *     responses:
    *       200:
    *         description: Marcado como consumido
    */
   @Post("/week-plan/:id/consume")
-  async markAsConsumed(@Param("id") id: number, @Req() req: AuthRequest) {
-    return shoppingService.markAsConsumed(id, req.userId!);
+  async markAsConsumed(
+    @Param("id") id: number,
+    @Body()
+    body: {
+      myPercentage?: number;
+      householdShares?: { userId: number; percentage: number }[];
+    },
+    @Req() req: AuthRequest,
+  ) {
+    return shoppingService.markAsConsumed(
+      id,
+      req.userId!,
+      body.myPercentage ?? 100,
+      body.householdShares ?? [],
+    );
   }
 
   /**

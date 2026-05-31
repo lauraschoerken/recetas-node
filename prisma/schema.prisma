@@ -213,7 +213,7 @@ model RecipeIngredient {
 model WeekPlan {
   id            Int                 @id @default(autoincrement())
   plannedDate   DateTime
-  servings      Int                 @default(4)
+  servings      Float               @default(4)
   type          String              @default("meal")
   cooked        Boolean             @default(false)
   consumed      Boolean             @default(false)

@@ -1726,6 +1726,8 @@ export class ShoppingService {
   async markAsConsumed(
     planId: number,
     userId: number,
+    myPercentage: number = 100,
+    householdShares: { userId: number; percentage: number }[] = [],
   ): Promise<{ success: boolean; servingsDeducted: number }> {
     const plan = await prisma.weekPlan.findFirst({
       where: { id: planId, userId, type: "meal" },
@@ -1746,10 +1748,17 @@ export class ShoppingService {
         ? { householdId: sharing.householdId }
         : { userId };
 
+    // Calcular cuántas raciones se descontan del inventario en total
+    // (solo las raciones que se consumen, no las que quedan en casa)
+    const totalConsumedPct =
+      myPercentage + householdShares.reduce((s, sh) => s + sh.percentage, 0);
+    const totalConsumedFraction = Math.min(1, totalConsumedPct / 100);
+    const servingsToDeduct = plan.servings * totalConsumedFraction;
+
     let servingsDeducted = 0;
 
     if (plan.recipeId) {
-      let remainingServings = plan.servings;
+      let remainingServings = servingsToDeduct;
 
       const homeItems = await prisma.homeItem.findMany({
         where: { ...homeWhereBase, recipeId: plan.recipeId },
@@ -1775,10 +1784,38 @@ export class ShoppingService {
       }
     }
 
+    // Si se comparte, ajustar las raciones del plan del usuario actual
+    // para que su registro de nutrición solo cuente su porción
+    const myServings =
+      myPercentage < 100
+        ? Math.round(((plan.servings * myPercentage) / 100) * 100) / 100
+        : plan.servings;
+
     await prisma.weekPlan.update({
       where: { id: planId },
-      data: { consumed: true },
+      data: {
+        consumed: true,
+        ...(myPercentage < 100 ? { servings: myServings } : {}),
+      },
     });
+
+    // Crear entradas de consumo para los miembros del hogar que participan
+    for (const share of householdShares) {
+      if (share.percentage > 0 && plan.recipeId) {
+        const memberServings =
+          Math.round(((plan.servings * share.percentage) / 100) * 100) / 100;
+        await prisma.weekPlan.create({
+          data: {
+            userId: share.userId,
+            recipeId: plan.recipeId,
+            plannedDate: plan.plannedDate,
+            servings: memberServings,
+            type: "meal",
+            consumed: true,
+          },
+        });
+      }
+    }
 
     // Check alerts for consumed recipe
     if (plan.recipeId) {
