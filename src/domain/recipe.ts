@@ -67,6 +67,7 @@ export interface CreateComponentOptionDto {
   name: string;
   isDefault?: boolean;
   recipeId?: number;
+  ingredientId?: number;
   ingredientName?: string;
   quantity?: number;
   unit?: string;
@@ -92,6 +93,7 @@ export interface CreateRecipeDto {
   isPublic?: boolean;
   defaultLocation?: string | null;
   ingredients?: {
+    ingredientId?: number;
     name: string;
     quantity: number;
     unit: string;
@@ -110,6 +112,7 @@ export interface UpdateRecipeDto {
   isPublic?: boolean;
   defaultLocation?: string | null;
   ingredients?: {
+    ingredientId?: number;
     name: string;
     quantity: number;
     unit: string;

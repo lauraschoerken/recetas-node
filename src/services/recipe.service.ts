@@ -343,7 +343,19 @@ export class RecipeService {
     );
 
     for (const ing of validIngredients) {
-      const ingredient = await this.getOrCreateIngredient(ing.name, ing.unit);
+      const ingredient = ing.ingredientId
+        ? await prisma.ingredient.findUnique({
+            where: { id: ing.ingredientId },
+            include: { variants: true, conversions: true },
+          })
+        : await this.getOrCreateIngredient(ing.name, ing.unit);
+
+      if (!ingredient) {
+        throw new Error(
+          `No se encontró el ingrediente con id ${ing.ingredientId}`,
+        );
+      }
+
       let variantId = (ing as any).variantId || null;
       let cookedVariantId = (ing as any).cookedVariantId || null;
 
@@ -427,14 +439,31 @@ export class RecipeService {
             let cookedVariantId: number | null =
               (opt as any).cookedVariantId || null;
 
-            if (opt.ingredientName) {
+            if (opt.ingredientId) {
+              const ingredient = await prisma.ingredient.findUnique({
+                where: { id: opt.ingredientId },
+                include: { variants: true },
+              });
+              if (!ingredient) {
+                throw new Error(
+                  `No se encontró el ingrediente con id ${opt.ingredientId}`,
+                );
+              }
+              ingredientId = ingredient.id;
+
+              const variants = await prisma.ingredientVariant.findMany({
+                where: { ingredientId: ingredient.id },
+              });
+              const defaultVariant =
+                variants.find((v) => v.isDefault) || variants[0];
+              variantId = defaultVariant?.id || null;
+            } else if (opt.ingredientName) {
               const ingredient = await this.getOrCreateIngredient(
                 opt.ingredientName,
                 opt.unit || "g",
               );
               ingredientId = ingredient.id;
 
-              // Obtener la variante por defecto
               const variants = await prisma.ingredientVariant.findMany({
                 where: { ingredientId: ingredient.id },
               });
@@ -512,7 +541,18 @@ export class RecipeService {
     }[] = [];
     if (data.ingredients && data.ingredients.length > 0) {
       for (const ing of data.ingredients) {
-        const ingredient = await this.getOrCreateIngredient(ing.name, ing.unit);
+        const ingredient = ing.ingredientId
+          ? await prisma.ingredient.findUnique({
+              where: { id: ing.ingredientId },
+              include: { variants: true, conversions: true },
+            })
+          : await this.getOrCreateIngredient(ing.name, ing.unit);
+
+        if (!ingredient) {
+          throw new Error(
+            `No se encontró el ingrediente con id ${ing.ingredientId}`,
+          );
+        }
 
         let variantId = (ing as any).variantId || null;
         let cookedVariantId = (ing as any).cookedVariantId || null;
@@ -586,14 +626,31 @@ export class RecipeService {
             let cookedVariantId: number | null =
               (opt as any).cookedVariantId || null;
 
-            if (opt.ingredientName) {
+            if (opt.ingredientId) {
+              const ingredient = await prisma.ingredient.findUnique({
+                where: { id: opt.ingredientId },
+                include: { variants: true },
+              });
+              if (!ingredient) {
+                throw new Error(
+                  `No se encontró el ingrediente con id ${opt.ingredientId}`,
+                );
+              }
+              ingredientId = ingredient.id;
+
+              const variants = await prisma.ingredientVariant.findMany({
+                where: { ingredientId: ingredient.id },
+              });
+              const defaultVariant =
+                variants.find((v) => v.isDefault) || variants[0];
+              variantId = defaultVariant?.id || null;
+            } else if (opt.ingredientName) {
               const ingredient = await this.getOrCreateIngredient(
                 opt.ingredientName,
                 opt.unit || "g",
               );
               ingredientId = ingredient.id;
 
-              // Obtener la variante por defecto
               const variants = await prisma.ingredientVariant.findMany({
                 where: { ingredientId: ingredient.id },
               });
@@ -1337,6 +1394,65 @@ export class RecipeService {
     return (name || "").trim();
   }
 
+  private normalizeImportResolutionKey(
+    value: string | null | undefined,
+  ): string {
+    return this.normalizeIngredientName(value)
+      .toLowerCase()
+      .replace(/\s+/g, " ");
+  }
+
+  private async findVisibleIngredientByName(name: string, userId: number) {
+    return prisma.ingredient.findFirst({
+      where: {
+        name: { equals: name, mode: "insensitive" },
+        OR: [{ status: "GLOBAL" }, { createdByUserId: userId }],
+      },
+      select: { id: true, name: true, status: true, createdByUserId: true },
+    });
+  }
+
+  private findIngredientResolution(
+    ingredientResolutions: Record<
+      string,
+      { ingredientId?: number | null; name?: string; createNew?: boolean }
+    >,
+    recipeTitle: string,
+    index: number,
+    importedIngredientName: string,
+    importedId: number | null | undefined,
+  ) {
+    const normalizedImportedName = this.normalizeImportResolutionKey(
+      importedIngredientName,
+    );
+    const normalizedImportedId =
+      Number.isFinite(Number(importedId)) && Number(importedId) > 0
+        ? String(Number(importedId))
+        : "new";
+    const normalizedTitle = this.normalizeImportResolutionKey(recipeTitle);
+
+    for (const [candidateKey, candidateResolution] of Object.entries(
+      ingredientResolutions,
+    )) {
+      if (!candidateKey) continue;
+
+      const normalizedKey = this.normalizeImportResolutionKey(candidateKey);
+      const startsWithTitle = normalizedKey.startsWith(`${normalizedTitle}|`);
+      const hasIndex = normalizedKey.includes(`|${String(index)}|`);
+      const hasName = normalizedKey.includes(`|${normalizedImportedName}|`);
+      const hasIdMatch =
+        normalizedKey.endsWith(`|${normalizedImportedId}`) ||
+        normalizedKey.endsWith(`|new`) ||
+        normalizedImportedId === "new";
+
+      if (startsWithTitle && hasIndex && hasName && hasIdMatch) {
+        return candidateResolution;
+      }
+    }
+
+    return undefined;
+  }
+
   private async ensureIngredientVariantState(
     ingredientId: number,
     variantName: string | null | undefined,
@@ -1403,6 +1519,11 @@ export class RecipeService {
   private async ensureIngredientImportData(
     ingredientInput: any,
     userId: number,
+    options: {
+      ingredientId?: number | null;
+      createNew?: boolean;
+      preferredName?: string;
+    } = {},
   ): Promise<{
     ingredientId: number;
     variantId: number | null;
@@ -1410,6 +1531,7 @@ export class RecipeService {
     unit: string;
   }> {
     const rawName =
+      options?.preferredName ??
       ingredientInput?.ingredientName ??
       ingredientInput?.name ??
       ingredientInput?.ingredient?.name ??
@@ -1425,12 +1547,30 @@ export class RecipeService {
       ingredientInput?.ingredient?.unit ??
       "g";
 
-    let ingredient = await prisma.ingredient.findFirst({
-      where: { name: { equals: name, mode: "insensitive" } },
-      include: { variants: true, conversions: true },
-    });
+    const explicitIngredientId =
+      options.ingredientId ??
+      ingredientInput?.id ??
+      ingredientInput?.ingredientId ??
+      ingredientInput?.ingredient?.id ??
+      null;
 
-    if (!ingredient) {
+    let ingredient = explicitIngredientId
+      ? await prisma.ingredient.findUnique({
+          where: { id: explicitIngredientId },
+          include: { variants: true, conversions: true },
+        })
+      : null;
+
+    if (
+      ingredient &&
+      ingredient.status === "PRIVATE" &&
+      ingredient.createdByUserId !== null &&
+      ingredient.createdByUserId !== userId
+    ) {
+      ingredient = null;
+    }
+
+    if (!ingredient && options.createNew) {
       ingredient = await prisma.ingredient.create({
         data: {
           name,
@@ -1443,6 +1583,22 @@ export class RecipeService {
         },
         include: { variants: true, conversions: true },
       });
+    }
+
+    if (!ingredient) {
+      ingredient = await prisma.ingredient.findFirst({
+        where: {
+          name: { equals: name, mode: "insensitive" },
+          OR: [{ status: "GLOBAL" }, { createdByUserId: userId }],
+        },
+        include: { variants: true, conversions: true },
+      });
+    }
+
+    if (!ingredient) {
+      throw new Error(
+        `El ingrediente "${name}" no existe y no se ha marcado como nuevo para crearlo durante la importación.`,
+      );
     }
 
     if (!ingredient.variants || ingredient.variants.length === 0) {
@@ -1551,14 +1707,8 @@ export class RecipeService {
     };
   }
 
-  async importFromJson(
-    recipesInput: any[] | any,
-    userId: number,
-  ): Promise<{
-    importedCount: number;
-    skipped: { title: string; id: number }[];
-  }> {
-    const recipes = Array.isArray(recipesInput)
+  private normalizeRecipeImportPayload(recipesInput: any[] | any): any[] {
+    return Array.isArray(recipesInput)
       ? recipesInput
       : Array.isArray(recipesInput?.recipes)
         ? recipesInput.recipes
@@ -1569,6 +1719,393 @@ export class RecipeService {
               (recipesInput.title || recipesInput.id)
             ? [recipesInput]
             : [];
+  }
+
+  private collectRecipeIngredientEntries(
+    recipe: any,
+  ): Array<{ recipeTitle: string; index: number; ingredientInput: any }> {
+    const entries: Array<{
+      recipeTitle: string;
+      index: number;
+      ingredientInput: any;
+    }> = [];
+    const seen = new Set<object>();
+    const seenEntries = new Set<string>();
+
+    const visitRecipe = (node: any, fallbackTitle?: string) => {
+      if (!node || typeof node !== "object" || seen.has(node)) return;
+      seen.add(node);
+
+      const recipeTitle =
+        this.normalizeIngredientName(
+          String(node.title ?? fallbackTitle ?? "Receta sin título").trim(),
+        ) || "Receta sin título";
+
+      let localIndex = 0;
+      for (const ingredientInput of Array.isArray(node.ingredients)
+        ? node.ingredients
+        : []) {
+        const key = `${recipeTitle}|ingredients|${localIndex}|${this.normalizeIngredientName(
+          ingredientInput?.ingredientName ??
+            ingredientInput?.name ??
+            ingredientInput?.ingredient?.name ??
+            "",
+        )}`;
+        if (!seenEntries.has(key)) {
+          seenEntries.add(key);
+          entries.push({ recipeTitle, index: localIndex, ingredientInput });
+        }
+        localIndex += 1;
+      }
+
+      for (const component of Array.isArray(node.components)
+        ? node.components
+        : []) {
+        for (const option of Array.isArray(component?.options)
+          ? component.options
+          : []) {
+          const ingredientName = this.normalizeIngredientName(
+            option?.ingredientName ??
+              option?.name ??
+              option?.ingredient?.name ??
+              option?.ingredient?.ingredientName,
+          );
+
+          if (ingredientName) {
+            const key = `${recipeTitle}|component|${localIndex}|${ingredientName}`;
+            if (!seenEntries.has(key)) {
+              seenEntries.add(key);
+              entries.push({
+                recipeTitle,
+                index: localIndex,
+                ingredientInput: option,
+              });
+            }
+            localIndex += 1;
+          }
+
+          if (option && typeof option === "object") {
+            if (
+              typeof option.recipe === "object" &&
+              (option.recipe?.title || option.recipe?.id)
+            ) {
+              visitRecipe(option.recipe, option.recipe.title ?? recipeTitle);
+            }
+            if (
+              typeof option.ingredient === "object" &&
+              (option.ingredient?.name || option.ingredient?.id)
+            ) {
+              const nestedIngredient = option.ingredient;
+              const nestedKey = `${recipeTitle}|nested|${localIndex}|${this.normalizeIngredientName(
+                nestedIngredient?.name ?? "",
+              )}`;
+              if (!seenEntries.has(nestedKey)) {
+                seenEntries.add(nestedKey);
+                entries.push({
+                  recipeTitle,
+                  index: localIndex,
+                  ingredientInput: {
+                    ...nestedIngredient,
+                    ingredientName: nestedIngredient.name,
+                    name: nestedIngredient.name,
+                  },
+                });
+              }
+              localIndex += 1;
+            }
+          }
+        }
+      }
+
+      for (const value of Object.values(node)) {
+        if (!value || typeof value !== "object") continue;
+        if (Array.isArray(value)) {
+          for (const item of value) {
+            const candidateItem = item as any;
+            if (!candidateItem || typeof candidateItem !== "object") continue;
+            if (
+              this.normalizeIngredientName(
+                candidateItem?.ingredientName ??
+                  candidateItem?.name ??
+                  candidateItem?.ingredient?.name ??
+                  "",
+              )
+            ) {
+              continue;
+            }
+            if (
+              candidateItem?.title ||
+              candidateItem?.ingredients ||
+              candidateItem?.components ||
+              candidateItem?.recipe
+            ) {
+              visitRecipe(
+                candidateItem,
+                candidateItem.title ?? fallbackTitle ?? recipeTitle,
+              );
+            }
+          }
+          continue;
+        }
+
+        const candidateValue = value as any;
+        if (
+          candidateValue?.title ||
+          candidateValue?.ingredients ||
+          candidateValue?.components ||
+          candidateValue?.recipe
+        ) {
+          visitRecipe(
+            candidateValue,
+            candidateValue.title ?? fallbackTitle ?? recipeTitle,
+          );
+        }
+      }
+    };
+
+    visitRecipe(recipe);
+    return entries;
+  }
+
+  private collectRootRecipeIngredientEntries(
+    recipe: any,
+  ): Array<{ recipeTitle: string; index: number; ingredientInput: any }> {
+    const entries: Array<{
+      recipeTitle: string;
+      index: number;
+      ingredientInput: any;
+    }> = [];
+    const recipeTitle =
+      this.normalizeIngredientName(
+        String(recipe?.title ?? "Receta sin título").trim(),
+      ) || "Receta sin título";
+
+    for (const [index, ingredientInput] of Array.isArray(recipe?.ingredients)
+      ? recipe.ingredients.entries()
+      : []) {
+      entries.push({ recipeTitle, index, ingredientInput });
+    }
+
+    for (const component of Array.isArray(recipe?.components)
+      ? recipe.components
+      : []) {
+      for (const option of Array.isArray(component?.options)
+        ? component.options
+        : []) {
+        const ingredientName = this.normalizeIngredientName(
+          option?.ingredientName ??
+            option?.name ??
+            option?.ingredient?.name ??
+            option?.ingredient?.ingredientName,
+        );
+        if (ingredientName) {
+          entries.push({
+            recipeTitle,
+            index: entries.length,
+            ingredientInput: option,
+          });
+        }
+      }
+    }
+
+    return entries;
+  }
+
+  async reviewImportJson(
+    recipesInput: any[] | any,
+    userId: number,
+  ): Promise<{
+    needsReview: boolean;
+    conflicts: Array<{
+      key: string;
+      recipeTitle: string;
+      ingredientName: string;
+      importedId: number | null;
+      importedName: string;
+      candidates: Array<{ id: number; name: string }>;
+    }>;
+  }> {
+    const recipes = this.normalizeRecipeImportPayload(recipesInput);
+    const conflicts: Array<{
+      key: string;
+      recipeTitle: string;
+      ingredientName: string;
+      importedId: number | null;
+      importedName: string;
+      candidates: Array<{ id: number; name: string }>;
+    }> = [];
+    const seenConflictValues = new Set<string>();
+
+    for (const recipe of recipes) {
+      if (!recipe || !recipe.title) continue;
+
+      for (const {
+        recipeTitle,
+        index,
+        ingredientInput,
+      } of this.collectRecipeIngredientEntries(recipe)) {
+        const importedName = this.normalizeIngredientName(
+          ingredientInput?.ingredientName ??
+            ingredientInput?.name ??
+            ingredientInput?.ingredient?.name,
+        );
+        if (!importedName) continue;
+
+        const importedId = Number(
+          ingredientInput?.id ??
+            ingredientInput?.ingredientId ??
+            ingredientInput?.ingredient?.id ??
+            ingredientInput?.ingredient_base_id ??
+            NaN,
+        );
+
+        const key = `${this.normalizeImportResolutionKey(recipeTitle)}|${index}|${this.normalizeImportResolutionKey(importedName)}|${Number.isFinite(importedId) && importedId > 0 ? importedId : "new"}`;
+        const dedupeKey = `${this.normalizeImportResolutionKey(recipeTitle)}|${this.normalizeImportResolutionKey(importedName)}`;
+
+        let ingredientById: {
+          id: number;
+          name: string;
+          status: string;
+          createdByUserId: number | null;
+        } | null = null;
+        if (Number.isFinite(importedId) && importedId > 0) {
+          ingredientById = await prisma.ingredient.findUnique({
+            where: { id: importedId },
+            select: {
+              id: true,
+              name: true,
+              status: true,
+              createdByUserId: true,
+            },
+          });
+        }
+
+        if (
+          ingredientById &&
+          ingredientById.status === "PRIVATE" &&
+          ingredientById.createdByUserId !== null &&
+          ingredientById.createdByUserId !== userId
+        ) {
+          if (seenConflictValues.has(dedupeKey)) continue;
+          seenConflictValues.add(dedupeKey);
+          conflicts.push({
+            key,
+            recipeTitle,
+            ingredientName: importedName,
+            importedId: ingredientById.id,
+            importedName: ingredientById.name,
+            candidates: [],
+          });
+          continue;
+        }
+
+        if (
+          ingredientById &&
+          this.normalizeIngredientName(ingredientById.name) !== importedName
+        ) {
+          const candidates = await prisma.ingredient.findMany({
+            where: {
+              OR: [
+                { name: { contains: importedName, mode: "insensitive" } },
+                {
+                  name: {
+                    contains: this.normalizeIngredientName(ingredientById.name),
+                    mode: "insensitive",
+                  },
+                },
+              ],
+            },
+            select: { id: true, name: true },
+            take: 10,
+          });
+
+          if (seenConflictValues.has(dedupeKey)) continue;
+          seenConflictValues.add(dedupeKey);
+          conflicts.push({
+            key,
+            recipeTitle,
+            ingredientName: importedName,
+            importedId: ingredientById.id,
+            importedName: ingredientById.name,
+            candidates: candidates.map((c) => ({ id: c.id, name: c.name })),
+          });
+          continue;
+        }
+
+        if (!ingredientById) {
+          const candidates = await prisma.ingredient.findMany({
+            where: {
+              OR: [
+                {
+                  AND: [
+                    { name: { contains: importedName, mode: "insensitive" } },
+                    { OR: [{ status: "GLOBAL" }, { createdByUserId: userId }] },
+                  ],
+                },
+                {
+                  AND: [
+                    {
+                      name: {
+                        contains: importedName
+                          .split(/\s+/)
+                          .slice(0, 2)
+                          .join(" "),
+                        mode: "insensitive",
+                      },
+                    },
+                    { OR: [{ status: "GLOBAL" }, { createdByUserId: userId }] },
+                  ],
+                },
+              ],
+            },
+            select: { id: true, name: true },
+            take: 10,
+          });
+
+          const matchingPrivateIngredient = await prisma.ingredient.findFirst({
+            where: {
+              name: { equals: importedName, mode: "insensitive" },
+              status: "PRIVATE",
+              createdByUserId: { not: userId },
+            },
+            select: { id: true, name: true, createdByUserId: true },
+          });
+
+          const safeCandidate = candidates.find(
+            (c) => this.normalizeIngredientName(c.name) === importedName,
+          );
+
+          if (!safeCandidate || matchingPrivateIngredient) {
+            if (seenConflictValues.has(dedupeKey)) continue;
+            seenConflictValues.add(dedupeKey);
+            conflicts.push({
+              key,
+              recipeTitle,
+              ingredientName: importedName,
+              importedId: matchingPrivateIngredient?.id ?? null,
+              importedName: matchingPrivateIngredient?.name ?? importedName,
+              candidates: candidates.map((c) => ({ id: c.id, name: c.name })),
+            });
+          }
+        }
+      }
+    }
+
+    return { needsReview: conflicts.length > 0, conflicts };
+  }
+
+  async importFromJson(
+    recipesInput: any[] | any,
+    userId: number,
+    ingredientResolutions: Record<
+      string,
+      { ingredientId?: number | null; name?: string; createNew?: boolean }
+    > = {},
+  ): Promise<{
+    importedCount: number;
+    skipped: { title: string; id: number }[];
+  }> {
+    const recipes = this.normalizeRecipeImportPayload(recipesInput);
 
     let importedCount = 0;
     const skipped: { title: string; id: number }[] = [];
@@ -1586,14 +2123,69 @@ export class RecipeService {
       }
 
       const dtoIngredients: any[] = [];
-      for (const ingredientInput of recipe.ingredients || []) {
+      for (const {
+        recipeTitle,
+        index,
+        ingredientInput,
+      } of this.collectRootRecipeIngredientEntries(recipe)) {
+        const importedIngredientName = this.normalizeIngredientName(
+          ingredientInput?.ingredientName ??
+            ingredientInput?.name ??
+            ingredientInput?.ingredient?.name,
+        );
+        const resolution = this.findIngredientResolution(
+          ingredientResolutions,
+          recipeTitle,
+          index,
+          importedIngredientName,
+          Number(
+            ingredientInput?.id ??
+              ingredientInput?.ingredientId ??
+              ingredientInput?.ingredient?.id ??
+              0,
+          ) || null,
+        );
+
+        const normalizedIngredientInput = {
+          ...ingredientInput,
+          ingredientName:
+            resolution?.name ??
+            ingredientInput?.ingredientName ??
+            ingredientInput?.name ??
+            ingredientInput?.ingredient?.name,
+          name:
+            resolution?.name ??
+            ingredientInput?.name ??
+            ingredientInput?.ingredient?.name,
+          ingredient: {
+            ...(ingredientInput?.ingredient ?? {}),
+            ...(resolution?.ingredientId
+              ? { id: resolution.ingredientId }
+              : {}),
+            ...(resolution?.name ? { name: resolution.name } : {}),
+          },
+          ...(resolution?.ingredientId
+            ? {
+                id: resolution.ingredientId,
+                ingredientId: resolution.ingredientId,
+              }
+            : {}),
+        };
+
         const resolved = await this.ensureIngredientImportData(
-          ingredientInput,
+          normalizedIngredientInput,
           userId,
+          {
+            ingredientId: resolution?.ingredientId ?? null,
+            createNew: Boolean(resolution?.createNew),
+            preferredName: resolution?.name ?? importedIngredientName,
+          },
         );
         dtoIngredients.push({
+          ingredientId: resolution?.ingredientId ?? undefined,
           name: this.normalizeIngredientName(
-            ingredientInput?.ingredientName ??
+            resolution?.name ??
+              ingredientInput?.ingredientName ??
               ingredientInput?.name ??
               ingredientInput?.ingredient?.name,
           ),

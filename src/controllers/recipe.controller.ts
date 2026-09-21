@@ -386,10 +386,10 @@ export class RecipeController {
 
   /**
    * @swagger
-   * /api/recipes/import/json:
+   * /api/recipes/import/json/review:
    *   post:
    *     tags: [Recetas]
-   *     summary: Importar recetas desde JSON
+   *     summary: Revisar conflictos de ingredientes antes de importar JSON
    *     requestBody:
    *       required: true
    *       content:
@@ -404,10 +404,10 @@ export class RecipeController {
    *                   type: object
    *     responses:
    *       200:
-   *         description: Resultado de la importación
+   *         description: Resultado de la revisión
    */
-  @Post("/import/json")
-  async importJson(
+  @Post("/import/json/review")
+  async reviewImportJson(
     @Body() body: { recipes?: any[] | any },
     @Req() req: AuthRequest,
   ) {
@@ -426,6 +426,63 @@ export class RecipeController {
     if (!recipes || recipes.length === 0) {
       throw { httpCode: 400, message: "recipes es requerido" };
     }
-    return recipeService.importFromJson(recipes, req.userId!);
+    return recipeService.reviewImportJson(recipes, req.userId!);
+  }
+
+  /**
+   * @swagger
+   * /api/recipes/import/json:
+   *   post:
+   *     tags: [Recetas]
+   *     summary: Importar recetas desde JSON
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [recipes]
+   *             properties:
+   *               recipes:
+   *                 type: array
+   *                 items:
+   *                   type: object
+   *               ingredientResolutions:
+   *                 type: object
+   *                 additionalProperties:
+   *                   type: object
+   *     responses:
+   *       200:
+   *         description: Resultado de la importación
+   */
+  @Post("/import/json")
+  async importJson(
+    @Body()
+    body: {
+      recipes?: any[] | any;
+      ingredientResolutions?: Record<string, any>;
+    },
+    @Req() req: AuthRequest,
+  ) {
+    const recipes = Array.isArray(body?.recipes)
+      ? body.recipes
+      : body?.recipes &&
+          typeof body.recipes === "object" &&
+          (body.recipes.title || body.recipes.id)
+        ? [body.recipes]
+        : Array.isArray(body?.recipes?.recipes)
+          ? body.recipes.recipes
+          : Array.isArray(body?.recipes?.data)
+            ? body.recipes.data
+            : [];
+
+    if (!recipes || recipes.length === 0) {
+      throw { httpCode: 400, message: "recipes es requerido" };
+    }
+    return recipeService.importFromJson(
+      recipes,
+      req.userId!,
+      body.ingredientResolutions ?? {},
+    );
   }
 }
