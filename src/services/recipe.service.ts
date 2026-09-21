@@ -142,7 +142,7 @@ export class RecipeService {
     if (search) {
       const pattern = `%${search}%`;
       const rows = await prisma.$queryRaw<{ id: number }[]>(
-        Prisma.sql`SELECT id FROM "Recipe" WHERE unaccent(lower(title)) LIKE unaccent(lower(${pattern}))`
+        Prisma.sql`SELECT id FROM "Recipe" WHERE unaccent(lower(title)) LIKE unaccent(lower(${pattern}))`,
       );
       searchIds = rows.map((r) => r.id);
     }
@@ -152,7 +152,7 @@ export class RecipeService {
     if (ingredient) {
       const pattern = `%${ingredient}%`;
       const rows = await prisma.$queryRaw<{ id: number }[]>(
-        Prisma.sql`SELECT id FROM "Ingredient" WHERE unaccent(lower(name)) LIKE unaccent(lower(${pattern}))`
+        Prisma.sql`SELECT id FROM "Ingredient" WHERE unaccent(lower(name)) LIKE unaccent(lower(${pattern}))`,
       );
       ingredientIds = rows.map((r) => r.id);
     }
@@ -160,9 +160,7 @@ export class RecipeService {
     const where = {
       AND: [
         visibilityFilter,
-        ...(searchIds !== null
-          ? [{ id: { in: searchIds } }]
-          : []),
+        ...(searchIds !== null ? [{ id: { in: searchIds } }] : []),
         ...(ingredientIds !== null
           ? ingredientIds.length > 0
             ? [
@@ -1169,6 +1167,15 @@ export class RecipeService {
     return rows.join("\n");
   }
 
+  async exportJson(ids: number[], userId: number): Promise<any[]> {
+    const recipes: any[] = [];
+    for (const id of ids) {
+      const recipe = await this.getById(id, userId);
+      if (recipe) recipes.push(recipe);
+    }
+    return recipes;
+  }
+
   private parseCsv(content: string): string[][] {
     const rows: string[][] = [];
     let i = 0;
@@ -1321,6 +1328,364 @@ export class RecipeService {
 
       await this.create(dto, userId);
       importedCount++;
+    }
+
+    return { importedCount, skipped };
+  }
+
+  private normalizeIngredientName(name: string | null | undefined): string {
+    return (name || "").trim();
+  }
+
+  private async ensureIngredientVariantState(
+    ingredientId: number,
+    variantName: string | null | undefined,
+    weightFactor: number | null | undefined,
+    calories: number | null | undefined,
+    protein: number | null | undefined,
+    carbs: number | null | undefined,
+    fat: number | null | undefined,
+    fiber: number | null | undefined,
+  ): Promise<number | null> {
+    const safeName = this.normalizeIngredientName(variantName) || "Crudo";
+    const ingredient = await prisma.ingredient.findUnique({
+      where: { id: ingredientId },
+      include: { variants: true },
+    });
+    if (!ingredient) return null;
+
+    let variant = ingredient.variants.find(
+      (v) => v.name.toLowerCase() === safeName.toLowerCase(),
+    );
+
+    if (!variant) {
+      variant = await prisma.ingredientVariant.create({
+        data: {
+          ingredientId,
+          name: safeName,
+          isDefault: ingredient.variants.length === 0,
+          weightFactor: weightFactor ?? 1,
+          calories: calories ?? null,
+          protein: protein ?? null,
+          carbs: carbs ?? null,
+          fat: fat ?? null,
+          fiber: fiber ?? null,
+        },
+      });
+    } else {
+      variant = await prisma.ingredientVariant.update({
+        where: { id: variant.id },
+        data: {
+          weightFactor: weightFactor ?? variant.weightFactor,
+          calories: calories ?? variant.calories,
+          protein: protein ?? variant.protein,
+          carbs: carbs ?? variant.carbs,
+          fat: fat ?? variant.fat,
+          fiber: fiber ?? variant.fiber,
+        },
+      });
+    }
+
+    if (ingredient.variants.length === 0) {
+      await prisma.ingredientVariant.updateMany({
+        where: { ingredientId },
+        data: { isDefault: false },
+      });
+      await prisma.ingredientVariant.update({
+        where: { id: variant.id },
+        data: { isDefault: true },
+      });
+    }
+
+    return variant.id;
+  }
+
+  private async ensureIngredientImportData(
+    ingredientInput: any,
+    userId: number,
+  ): Promise<{
+    ingredientId: number;
+    variantId: number | null;
+    cookedVariantId: number | null;
+    unit: string;
+  }> {
+    const rawName =
+      ingredientInput?.ingredientName ??
+      ingredientInput?.name ??
+      ingredientInput?.ingredient?.name ??
+      "";
+    const name = this.normalizeIngredientName(rawName);
+    if (!name) {
+      throw new Error("El ingrediente importado no tiene nombre");
+    }
+
+    const ingredientUnit =
+      ingredientInput?.unit ??
+      ingredientInput?.ingredientBaseUnit ??
+      ingredientInput?.ingredient?.unit ??
+      "g";
+
+    let ingredient = await prisma.ingredient.findFirst({
+      where: { name: { equals: name, mode: "insensitive" } },
+      include: { variants: true, conversions: true },
+    });
+
+    if (!ingredient) {
+      ingredient = await prisma.ingredient.create({
+        data: {
+          name,
+          unit: ingredientUnit,
+          status: "PRIVATE",
+          createdByUserId: userId,
+          variants: {
+            create: [{ name: "Crudo", isDefault: true, weightFactor: 1 }],
+          },
+        },
+        include: { variants: true, conversions: true },
+      });
+    }
+
+    if (!ingredient.variants || ingredient.variants.length === 0) {
+      await prisma.ingredientVariant.create({
+        data: {
+          ingredientId: ingredient.id,
+          name: "Crudo",
+          isDefault: true,
+          weightFactor: 1,
+        },
+      });
+    }
+
+    const availableConversions = Array.isArray(ingredientInput?.conversions)
+      ? ingredientInput.conversions
+      : Array.isArray(ingredientInput?.ingredient?.conversions)
+        ? ingredientInput.ingredient.conversions
+        : [];
+
+    for (const conversion of availableConversions) {
+      if (!conversion || !conversion.unitName) continue;
+      const unitName = String(conversion.unitName).trim();
+      const gramsPerUnit = Number(conversion.gramsPerUnit ?? 0);
+      if (!unitName || !Number.isFinite(gramsPerUnit) || gramsPerUnit <= 0)
+        continue;
+
+      const existingConversion = ingredient.conversions.find(
+        (c) => c.unitName.toLowerCase() === unitName.toLowerCase(),
+      );
+      if (existingConversion) {
+        await prisma.unitConversion.update({
+          where: { id: existingConversion.id },
+          data: { gramsPerUnit },
+        });
+      } else {
+        await prisma.unitConversion.create({
+          data: {
+            ingredientId: ingredient.id,
+            unitName,
+            gramsPerUnit,
+          },
+        });
+      }
+    }
+
+    const purchaseVariantName =
+      ingredientInput?.variantName ??
+      ingredientInput?.variant?.name ??
+      ingredientInput?.state ??
+      (ingredientInput?.cookedVariantName ? "Crudo" : null) ??
+      ingredientInput?.ingredient?.variantName ??
+      null;
+    const cookedVariantName =
+      ingredientInput?.cookedVariantName ??
+      ingredientInput?.cookedVariant?.name ??
+      ingredientInput?.ingredient?.cookedVariantName ??
+      null;
+
+    let variantId: number | null = null;
+    if (purchaseVariantName) {
+      variantId = await this.ensureIngredientVariantState(
+        ingredient.id,
+        purchaseVariantName,
+        ingredientInput?.variant?.weightFactor ??
+          ingredientInput?.weightFactor ??
+          1,
+        ingredientInput?.variant?.calories ?? ingredientInput?.calories ?? null,
+        ingredientInput?.variant?.protein ?? ingredientInput?.protein ?? null,
+        ingredientInput?.variant?.carbs ?? ingredientInput?.carbs ?? null,
+        ingredientInput?.variant?.fat ?? ingredientInput?.fat ?? null,
+        ingredientInput?.variant?.fiber ?? ingredientInput?.fiber ?? null,
+      );
+    } else {
+      const defaultVariant =
+        ingredient.variants.find((v) => v.isDefault) || ingredient.variants[0];
+      variantId = defaultVariant?.id ?? null;
+    }
+
+    let cookedVariantId: number | null = null;
+    if (cookedVariantName) {
+      cookedVariantId = await this.ensureIngredientVariantState(
+        ingredient.id,
+        cookedVariantName,
+        ingredientInput?.cookedVariant?.weightFactor ??
+          ingredientInput?.weightFactor ??
+          1,
+        ingredientInput?.cookedVariant?.calories ?? null,
+        ingredientInput?.cookedVariant?.protein ?? null,
+        ingredientInput?.cookedVariant?.carbs ?? null,
+        ingredientInput?.cookedVariant?.fat ?? null,
+        ingredientInput?.cookedVariant?.fiber ?? null,
+      );
+    }
+
+    if (!variantId && ingredient.variants.length > 0) {
+      variantId =
+        ingredient.variants.find((v) => v.isDefault)?.id ??
+        ingredient.variants[0].id;
+    }
+
+    return {
+      ingredientId: ingredient.id,
+      variantId,
+      cookedVariantId,
+      unit: ingredient.unit || ingredientUnit,
+    };
+  }
+
+  async importFromJson(
+    recipesInput: any[] | any,
+    userId: number,
+  ): Promise<{
+    importedCount: number;
+    skipped: { title: string; id: number }[];
+  }> {
+    const recipes = Array.isArray(recipesInput)
+      ? recipesInput
+      : Array.isArray(recipesInput?.recipes)
+        ? recipesInput.recipes
+        : Array.isArray(recipesInput?.data)
+          ? recipesInput.data
+          : recipesInput &&
+              typeof recipesInput === "object" &&
+              (recipesInput.title || recipesInput.id)
+            ? [recipesInput]
+            : [];
+
+    let importedCount = 0;
+    const skipped: { title: string; id: number }[] = [];
+
+    for (const recipe of recipes) {
+      if (!recipe || !recipe.title) continue;
+      const title = String(recipe.title).trim();
+      const existing = await prisma.recipe.findFirst({
+        where: { title: { equals: title, mode: "insensitive" }, userId },
+        select: { id: true },
+      });
+      if (existing) {
+        skipped.push({ title, id: existing.id });
+        continue;
+      }
+
+      const dtoIngredients: any[] = [];
+      for (const ingredientInput of recipe.ingredients || []) {
+        const resolved = await this.ensureIngredientImportData(
+          ingredientInput,
+          userId,
+        );
+        dtoIngredients.push({
+          name: this.normalizeIngredientName(
+            ingredientInput?.ingredientName ??
+              ingredientInput?.name ??
+              ingredientInput?.ingredient?.name,
+          ),
+          quantity: Number(ingredientInput?.quantity ?? 0) || 0,
+          unit: ingredientInput?.unit || resolved.unit || "g",
+          variantId: resolved.variantId ?? undefined,
+          variantName:
+            ingredientInput?.variantName ??
+            ingredientInput?.variant?.name ??
+            ingredientInput?.state ??
+            undefined,
+          cookedVariantId: resolved.cookedVariantId ?? undefined,
+          cookedVariantName:
+            ingredientInput?.cookedVariantName ??
+            ingredientInput?.cookedVariant?.name ??
+            undefined,
+        });
+      }
+
+      const dtoComponents = (recipe.components || []).map((c: any) => ({
+        name: c.name,
+        sortOrder: c.sortOrder ?? 0,
+        isOptional: Boolean(c.isOptional),
+        defaultEnabled: Boolean(c.defaultEnabled),
+        options: (c.options || []).map(async (o: any) => {
+          const ingredientName =
+            o?.ingredientName ??
+            o?.ingredient?.name ??
+            o?.ingredientName ??
+            undefined;
+          const resolved = ingredientName
+            ? await this.ensureIngredientImportData(
+                {
+                  ...o,
+                  ingredientName,
+                  unit: o.unit ?? o.ingredient?.unit ?? "g",
+                },
+                userId,
+              )
+            : null;
+
+          return {
+            name: o.name,
+            isDefault: Boolean(o.isDefault),
+            recipeId: o.recipeId ?? undefined,
+            ingredientName,
+            quantity: o.quantity ?? undefined,
+            unit: o.unit ?? undefined,
+            recipeServings: o.recipeServings ?? undefined,
+            ingredientId: resolved?.ingredientId ?? undefined,
+            variantId: resolved?.variantId ?? undefined,
+            cookedVariantId: resolved?.cookedVariantId ?? undefined,
+          };
+        }),
+      }));
+
+      const dto: CreateRecipeDto = {
+        title,
+        description: recipe.description || undefined,
+        instructions: recipe.instructions || undefined,
+        servings: recipe.servings ?? 4,
+        cookTimeMinutes: recipe.cookTimeMinutes ?? undefined,
+        difficulty: recipe.difficulty || undefined,
+        isPublic: Boolean(recipe.isPublic),
+        defaultLocation: recipe.defaultLocation || undefined,
+        imageUrl: recipe.imageUrl || undefined,
+        ingredients: dtoIngredients,
+        components: await Promise.all(
+          dtoComponents.map(async (c: any) => ({
+            ...c,
+            options: await Promise.all(c.options),
+          })),
+        ),
+        ...(recipe.customCalories != null
+          ? { customCalories: Number(recipe.customCalories) }
+          : {}),
+        ...(recipe.customProtein != null
+          ? { customProtein: Number(recipe.customProtein) }
+          : {}),
+        ...(recipe.customCarbs != null
+          ? { customCarbs: Number(recipe.customCarbs) }
+          : {}),
+        ...(recipe.customFat != null
+          ? { customFat: Number(recipe.customFat) }
+          : {}),
+        ...(recipe.customFiber != null
+          ? { customFiber: Number(recipe.customFiber) }
+          : {}),
+      } as any;
+
+      await this.create(dto, userId);
+      importedCount += 1;
     }
 
     return { importedCount, skipped };
