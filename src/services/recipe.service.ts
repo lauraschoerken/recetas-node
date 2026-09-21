@@ -348,7 +348,21 @@ export class RecipeService {
             where: { id: ing.ingredientId },
             include: { variants: true, conversions: true },
           })
-        : await this.getOrCreateIngredient(ing.name, ing.unit);
+        : await this.getOrCreateIngredient(
+            ing.name,
+            ing.unit,
+            (ing as any).imageUrl,
+          );
+
+      if ((ing as any).imageUrl && ingredient) {
+        const hasImage = ingredient.imageUrl?.trim();
+        if (!hasImage || hasImage !== String((ing as any).imageUrl).trim()) {
+          await prisma.ingredient.update({
+            where: { id: ingredient.id },
+            data: { imageUrl: String((ing as any).imageUrl).trim() },
+          });
+        }
+      }
 
       if (!ingredient) {
         throw new Error(
@@ -705,7 +719,11 @@ export class RecipeService {
     return true;
   }
 
-  private async getOrCreateIngredient(name: string, unit: string) {
+  private async getOrCreateIngredient(
+    name: string,
+    unit: string,
+    imageUrl?: string | null,
+  ) {
     const trimmed = name.trim();
     const normalizedName =
       trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
@@ -724,6 +742,7 @@ export class RecipeService {
         data: {
           name: normalizedName,
           unit: baseUnit,
+          imageUrl: imageUrl?.trim() || null,
           variants: {
             create: {
               name: "Crudo",
@@ -731,6 +750,16 @@ export class RecipeService {
             },
           },
         },
+        include: { variants: true },
+      });
+    } else if (
+      imageUrl &&
+      imageUrl.trim() &&
+      ingredient.imageUrl !== imageUrl.trim()
+    ) {
+      ingredient = await prisma.ingredient.update({
+        where: { id: ingredient.id },
+        data: { imageUrl: imageUrl.trim() },
         include: { variants: true },
       });
     } else if (!ingredient.variants || ingredient.variants.length === 0) {
@@ -1069,6 +1098,7 @@ export class RecipeService {
       ingredients: (recipe.ingredients || []).map((ri: any) => ({
         id: ri.ingredient.id,
         name: ri.ingredient.name,
+        imageUrl: ri.ingredient.imageUrl || null,
         quantity: ri.quantity,
         unit: ri.unit || ri.ingredient.unit,
         ingredientBaseUnit: ri.ingredient.unit,
@@ -1546,6 +1576,10 @@ export class RecipeService {
       ingredientInput?.ingredientBaseUnit ??
       ingredientInput?.ingredient?.unit ??
       "g";
+    const imageUrl =
+      ingredientInput?.imageUrl ??
+      ingredientInput?.ingredient?.imageUrl ??
+      null;
 
     const explicitIngredientId =
       options.ingredientId ??
@@ -1577,6 +1611,7 @@ export class RecipeService {
           unit: ingredientUnit,
           status: "PRIVATE",
           createdByUserId: userId,
+          imageUrl: imageUrl?.trim() || null,
           variants: {
             create: [{ name: "Crudo", isDefault: true, weightFactor: 1 }],
           },
@@ -1599,6 +1634,18 @@ export class RecipeService {
       throw new Error(
         `El ingrediente "${name}" no existe y no se ha marcado como nuevo para crearlo durante la importación.`,
       );
+    }
+
+    if (
+      imageUrl &&
+      imageUrl.trim() &&
+      ingredient.imageUrl !== imageUrl.trim()
+    ) {
+      ingredient = await prisma.ingredient.update({
+        where: { id: ingredient.id },
+        data: { imageUrl: imageUrl.trim() },
+        include: { variants: true, conversions: true },
+      });
     }
 
     if (!ingredient.variants || ingredient.variants.length === 0) {
@@ -2148,6 +2195,10 @@ export class RecipeService {
 
         const normalizedIngredientInput = {
           ...ingredientInput,
+          imageUrl:
+            ingredientInput?.imageUrl ??
+            ingredientInput?.ingredient?.imageUrl ??
+            undefined,
           ingredientName:
             resolution?.name ??
             ingredientInput?.ingredientName ??
@@ -2163,6 +2214,14 @@ export class RecipeService {
               ? { id: resolution.ingredientId }
               : {}),
             ...(resolution?.name ? { name: resolution.name } : {}),
+            ...(ingredientInput?.imageUrl ||
+            ingredientInput?.ingredient?.imageUrl
+              ? {
+                  imageUrl:
+                    ingredientInput?.imageUrl ??
+                    ingredientInput?.ingredient?.imageUrl,
+                }
+              : {}),
           },
           ...(resolution?.ingredientId
             ? {

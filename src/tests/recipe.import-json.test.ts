@@ -89,6 +89,62 @@ describe("Recipe JSON import - ingredient state and conversions", () => {
     expect(importedIngredient.id).toBe(existingIngredient.id);
   });
 
+  it("keeps ingredient imageUrl when exporting and importing recipe JSON", async () => {
+    const ingredientName = `Imagen ingrediente ${Date.now()}`;
+    const imageUrl = "https://example.com/ingredient.jpg";
+    const ingredient = await prisma.ingredient.create({
+      data: {
+        name: ingredientName,
+        unit: "g",
+        status: "GLOBAL",
+        imageUrl,
+        variants: {
+          create: [{ name: "Crudo", isDefault: true, weightFactor: 1 }],
+        },
+      },
+    });
+
+    const recipe = await recipeService.create(
+      {
+        title: `Receta con imagen ${Date.now()}`,
+        servings: 2,
+        imageUrl: "https://example.com/recipe.jpg",
+        ingredients: [{ name: ingredientName, quantity: 200, unit: "g" }],
+      },
+      user.id,
+    );
+
+    const exported = await recipeService.exportJson([recipe.id], user.id);
+    expect(exported[0].ingredients[0].imageUrl).toBe(imageUrl);
+
+    const importedTitle = `Receta importada con imagen ${Date.now()}`;
+    await recipeService.importFromJson(
+      [
+        {
+          title: importedTitle,
+          servings: 2,
+          ingredients: [
+            {
+              name: ingredientName,
+              quantity: 150,
+              unit: "g",
+              imageUrl: "https://example.com/ingredient-updated.jpg",
+            },
+          ],
+        },
+      ],
+      user.id,
+    );
+
+    const latestIngredient = await prisma.ingredient.findUnique({
+      where: { id: ingredient.id },
+    });
+
+    expect(latestIngredient?.imageUrl).toBe(
+      "https://example.com/ingredient-updated.jpg",
+    );
+  });
+
   it("does not auto-create an ingredient unless the user explicitly chooses a new one", async () => {
     const title = `Receta sin resolver ${Date.now()}`;
     const ingredientName = `Ingrediente sin resolver ${Date.now()}`;
