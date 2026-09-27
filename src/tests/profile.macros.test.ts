@@ -74,6 +74,7 @@ describe('Cálculo de macros recomendados', () => {
       customProtein: 0,
       customCarbs: 0,
       customFat: 0,
+      customFiber: 31,
     });
 
     expect(result).toMatchObject({
@@ -81,6 +82,7 @@ describe('Cálculo de macros recomendados', () => {
       protein: 0,
       carbs: 0,
       fat: 0,
+      fiber: 31,
       bmr: 1699,
       tdee: 2633,
     });
@@ -93,6 +95,7 @@ describe('Validación del perfil para macros', () => {
     [{ weight: -1 }, 'weight'],
     [{ height: 300 }, 'height'],
     [{ customCalories: 500 }, 'customCalories'],
+    [{ customFiber: 201 }, 'customFiber'],
     [{ gender: 'other' as never }, 'gender'],
     [{ activityLevel: 'unknown' as never }, 'activityLevel'],
     [{ goal: 'unknown' as never }, 'goal'],
@@ -108,6 +111,7 @@ describe('Validación del perfil para macros', () => {
       customProtein: null,
       customCarbs: null,
       customFat: null,
+      customFiber: null,
     })).not.toThrow();
   });
 });

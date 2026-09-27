@@ -18,6 +18,7 @@ export interface UserProfile {
   customProtein?: number | null;
   customCarbs?: number | null;
   customFat?: number | null;
+  customFiber?: number | null;
 }
 
 export interface RecommendedMacros {
@@ -109,6 +110,7 @@ export function validateUserProfile(data: Partial<UserProfile>) {
   validateRange('customProtein', data.customProtein, 0, 1000, true);
   validateRange('customCarbs', data.customCarbs, 0, 1500, true);
   validateRange('customFat', data.customFat, 0, 500, true);
+  validateRange('customFiber', data.customFiber, 0, 200, true);
 
   if (data.gender != null && !VALID_GENDERS.includes(data.gender)) {
     throw { httpCode: 400, message: 'gender no es válido' };
@@ -139,7 +141,7 @@ export function calculateRecommendedMacros(profile: UserProfile): RecommendedMac
       protein: profile.customProtein ?? Math.round(calories * 0.25 / 4),
       carbs: profile.customCarbs ?? Math.round(calories * 0.45 / 4),
       fat: profile.customFat ?? Math.round(calories * 0.30 / 9),
-      fiber: 25,
+      fiber: profile.customFiber ?? 25,
       bmr: Math.round(bmr),
       tdee: Math.round(tdee || calories),
       method: 'Mifflin-St Jeor',
@@ -202,7 +204,8 @@ class ProfileService {
         customCalories: true,
         customProtein: true,
         customCarbs: true,
-        customFat: true
+        customFat: true,
+        customFiber: true
       }
     });
 
@@ -221,7 +224,8 @@ class ProfileService {
       customCalories: user.customCalories ?? undefined,
       customProtein: user.customProtein ?? undefined,
       customCarbs: user.customCarbs ?? undefined,
-      customFat: user.customFat ?? undefined
+      customFat: user.customFat ?? undefined,
+      customFiber: user.customFiber ?? undefined
     };
   }
 
@@ -240,7 +244,8 @@ class ProfileService {
         customCalories: data.customCalories,
         customProtein: data.customProtein,
         customCarbs: data.customCarbs,
-        customFat: data.customFat
+        customFat: data.customFat,
+        customFiber: data.customFiber
       },
       select: {
         imageUrl: true,
@@ -253,7 +258,8 @@ class ProfileService {
         customCalories: true,
         customProtein: true,
         customCarbs: true,
-        customFat: true
+        customFat: true,
+        customFiber: true
       }
     });
 
@@ -268,7 +274,8 @@ class ProfileService {
       customCalories: user.customCalories ?? undefined,
       customProtein: user.customProtein ?? undefined,
       customCarbs: user.customCarbs ?? undefined,
-      customFat: user.customFat ?? undefined
+      customFat: user.customFat ?? undefined,
+      customFiber: user.customFiber ?? undefined
     };
   }
 

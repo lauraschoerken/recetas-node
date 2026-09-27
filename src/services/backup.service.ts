@@ -39,6 +39,7 @@ export const backupService = {
           customProtein: true,
           customCarbs: true,
           customFat: true,
+          customFiber: true,
           planningAlertScope: true,
         },
       }),
@@ -137,6 +138,7 @@ export const backupService = {
                 customProtein: userProfile.customProtein,
                 customCarbs: userProfile.customCarbs,
                 customFat: userProfile.customFat,
+                customFiber: userProfile.customFiber,
                 planningAlertScope: userProfile.planningAlertScope,
               },
             ]
@@ -525,6 +527,10 @@ export const backupService = {
               mode === "overwrite"
                 ? (incoming.customFat ?? null)
                 : mergeIfKeep(incoming.customFat ?? null, current.customFat),
+            customFiber:
+              mode === "overwrite"
+                ? (incoming.customFiber ?? null)
+                : mergeIfKeep(incoming.customFiber ?? null, current.customFiber),
             planningAlertScope:
               mode === "overwrite"
                 ? (incoming.planningAlertScope ?? null)
@@ -1299,6 +1305,7 @@ export const backupService = {
               customProtein: u.customProtein ?? null,
               customCarbs: u.customCarbs ?? null,
               customFat: u.customFat ?? null,
+              customFiber: u.customFiber ?? null,
               planningAlertScope: u.planningAlertScope ?? null,
             },
           });
@@ -1320,6 +1327,7 @@ export const backupService = {
                     customProtein: cur?.customProtein ?? u.customProtein,
                     customCarbs: cur?.customCarbs ?? u.customCarbs,
                     customFat: cur?.customFat ?? u.customFat,
+                    customFiber: cur?.customFiber ?? u.customFiber,
                     planningAlertScope:
                       cur?.planningAlertScope ?? u.planningAlertScope,
                   }))
@@ -1334,6 +1342,7 @@ export const backupService = {
                   customProtein: u.customProtein ?? null,
                   customCarbs: u.customCarbs ?? null,
                   customFat: u.customFat ?? null,
+                  customFiber: u.customFiber ?? null,
                   planningAlertScope: u.planningAlertScope ?? null,
                 };
           await prisma.user.update({ where: { id: existingId }, data: patch });
@@ -2636,6 +2645,7 @@ export const backupService = {
           customProtein: true,
           customCarbs: true,
           customFat: true,
+          customFiber: true,
           planningAlertScope: true,
         },
       }),
@@ -2833,6 +2843,7 @@ export const backupService = {
           customProtein: u.customProtein,
           customCarbs: u.customCarbs,
           customFat: u.customFat,
+          customFiber: u.customFiber,
           planningAlertScope: u.planningAlertScope,
         })),
 

@@ -26,6 +26,7 @@ model User {
   customProtein  Int?
   customCarbs    Int?
   customFat      Int?
+  customFiber    Int?
   role           String     @default("USER") // "USER" | "ADMIN"
   planningAlertScope String?                 // "own" | "all"
   recipes        Recipe[]

@@ -136,6 +136,7 @@ describe("Profile Controller", () => {
           customProtein: null,
           customCarbs: null,
           customFat: null,
+          customFiber: null,
         });
 
       const res = await request(app)

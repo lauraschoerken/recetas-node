@@ -35,6 +35,8 @@ import { authMiddleware, AuthRequest } from '../middlewares';
  *           type: integer
  *         customFat:
  *           type: integer
+ *         customFiber:
+ *           type: integer
  *     RecommendedMacros:
  *       type: object
  *       properties:
@@ -136,6 +138,7 @@ export class ProfileController {
       customProtein?: number | null;
       customCarbs?: number | null;
       customFat?: number | null;
+      customFiber?: number | null;
     },
     @Req() req: AuthRequest
   ) {
