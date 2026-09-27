@@ -104,6 +104,54 @@ describe("Profile Controller", () => {
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty("weight", 72);
     });
+
+    it("rechaza valores y enumeraciones no válidos", async () => {
+      const invalidAge = await request(app)
+        .put("/api/profile")
+        .set("Authorization", `Bearer ${testUser.token}`)
+        .send({ age: 12 });
+      const invalidActivity = await request(app)
+        .put("/api/profile")
+        .set("Authorization", `Bearer ${testUser.token}`)
+        .send({ activityLevel: "sometimes" });
+
+      expect(invalidAge.status).toBe(400);
+      expect(invalidActivity.status).toBe(400);
+    });
+  });
+
+  describe("GET /api/profile/recommended-macros", () => {
+    it("calcula objetivos reproducibles con todos los datos", async () => {
+      await request(app)
+        .put("/api/profile")
+        .set("Authorization", `Bearer ${testUser.token}`)
+        .send({
+          weight: 75,
+          height: 175,
+          age: 30,
+          gender: "male",
+          activityLevel: "moderate",
+          goal: "maintain",
+          customCalories: null,
+          customProtein: null,
+          customCarbs: null,
+          customFat: null,
+        });
+
+      const res = await request(app)
+        .get("/api/profile/recommended-macros")
+        .set("Authorization", `Bearer ${testUser.token}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        calories: 2633,
+        protein: 105,
+        carbs: 389,
+        fat: 73,
+        fiber: 25,
+        method: "Mifflin-St Jeor",
+      });
+    });
   });
 });
 

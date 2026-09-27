@@ -46,6 +46,8 @@ import { authMiddleware, AuthRequest } from '../middlewares';
  *           type: integer
  *         fat:
  *           type: integer
+ *         fiber:
+ *           type: integer
  *         bmr:
  *           type: integer
  *           description: Basal Metabolic Rate
@@ -130,10 +132,10 @@ export class ProfileController {
       gender?: string;
       activityLevel?: string;
       goal?: string;
-      customCalories?: number;
-      customProtein?: number;
-      customCarbs?: number;
-      customFat?: number;
+      customCalories?: number | null;
+      customProtein?: number | null;
+      customCarbs?: number | null;
+      customFat?: number | null;
     },
     @Req() req: AuthRequest
   ) {

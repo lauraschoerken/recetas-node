@@ -14,10 +14,10 @@ export interface UserProfile {
   gender?: Gender;
   activityLevel?: ActivityLevel;
   goal?: Goal;
-  customCalories?: number;
-  customProtein?: number;
-  customCarbs?: number;
-  customFat?: number;
+  customCalories?: number | null;
+  customProtein?: number | null;
+  customCarbs?: number | null;
+  customFat?: number | null;
 }
 
 export interface RecommendedMacros {
@@ -25,8 +25,14 @@ export interface RecommendedMacros {
   protein: number;
   carbs: number;
   fat: number;
+  fiber: number;
   bmr: number;
   tdee: number;
+  method: 'Mifflin-St Jeor';
+  proteinPerKg: number;
+  referenceWeight: number;
+  calorieAdjustmentPercent: number;
+  calorieFloorApplied: boolean;
 }
 
 export interface DailyNutrition {
@@ -64,10 +70,10 @@ const ACTIVITY_MULTIPLIERS: Record<ActivityLevel, number> = {
   very_active: 1.9
 };
 
-const GOAL_ADJUSTMENTS: Record<Goal, number> = {
-  maintain: 0,
-  lose: -500,
-  gain: 300
+const GOAL_MULTIPLIERS: Record<Goal, number> = {
+  maintain: 1,
+  lose: 0.85,
+  gain: 1.075
 };
 
 // Calorías mínimas recomendadas por seguridad
@@ -75,6 +81,111 @@ const MIN_CALORIES = {
   male: 1500,
   female: 1300
 };
+
+const PROTEIN_FACTORS: Record<ActivityLevel, Record<Goal, number>> = {
+  sedentary: { maintain: 1.0, lose: 1.6, gain: 1.4 },
+  light: { maintain: 1.2, lose: 1.6, gain: 1.6 },
+  moderate: { maintain: 1.4, lose: 1.8, gain: 1.6 },
+  active: { maintain: 1.6, lose: 2.0, gain: 1.8 },
+  very_active: { maintain: 1.6, lose: 2.0, gain: 2.0 }
+};
+
+const VALID_GENDERS: Gender[] = ['male', 'female'];
+const VALID_ACTIVITY_LEVELS: ActivityLevel[] = ['sedentary', 'light', 'moderate', 'active', 'very_active'];
+const VALID_GOALS: Goal[] = ['maintain', 'lose', 'gain'];
+
+function validateRange(name: string, value: number | null | undefined, min: number, max: number, integer = false) {
+  if (value == null) return;
+  if (!Number.isFinite(value) || value < min || value > max || (integer && !Number.isInteger(value))) {
+    throw { httpCode: 400, message: `${name} debe estar entre ${min} y ${max}${integer ? ' y ser un número entero' : ''}` };
+  }
+}
+
+export function validateUserProfile(data: Partial<UserProfile>) {
+  validateRange('weight', data.weight, 25, 350);
+  validateRange('height', data.height, 100, 250);
+  validateRange('age', data.age, 18, 120, true);
+  validateRange('customCalories', data.customCalories, 800, 10000, true);
+  validateRange('customProtein', data.customProtein, 0, 1000, true);
+  validateRange('customCarbs', data.customCarbs, 0, 1500, true);
+  validateRange('customFat', data.customFat, 0, 500, true);
+
+  if (data.gender != null && !VALID_GENDERS.includes(data.gender)) {
+    throw { httpCode: 400, message: 'gender no es válido' };
+  }
+  if (data.activityLevel != null && !VALID_ACTIVITY_LEVELS.includes(data.activityLevel)) {
+    throw { httpCode: 400, message: 'activityLevel no es válido' };
+  }
+  if (data.goal != null && !VALID_GOALS.includes(data.goal)) {
+    throw { httpCode: 400, message: 'goal no es válido' };
+  }
+}
+
+export function calculateRecommendedMacros(profile: UserProfile): RecommendedMacros | null {
+  const hasBodyData = profile.weight != null && profile.height != null && profile.age != null && profile.gender != null;
+  let bmr = 0;
+  let tdee = 0;
+
+  if (hasBodyData) {
+    const sexConstant = profile.gender === 'male' ? 5 : -161;
+    bmr = 10 * profile.weight! + 6.25 * profile.height! - 5 * profile.age! + sexConstant;
+    if (profile.activityLevel) tdee = bmr * ACTIVITY_MULTIPLIERS[profile.activityLevel];
+  }
+
+  if (profile.customCalories != null) {
+    const calories = profile.customCalories;
+    return {
+      calories,
+      protein: profile.customProtein ?? Math.round(calories * 0.25 / 4),
+      carbs: profile.customCarbs ?? Math.round(calories * 0.45 / 4),
+      fat: profile.customFat ?? Math.round(calories * 0.30 / 9),
+      fiber: 25,
+      bmr: Math.round(bmr),
+      tdee: Math.round(tdee || calories),
+      method: 'Mifflin-St Jeor',
+      proteinPerKg: 0,
+      referenceWeight: profile.weight ?? 0,
+      calorieAdjustmentPercent: 0,
+      calorieFloorApplied: false
+    };
+  }
+
+  if (!hasBodyData || !profile.activityLevel || !profile.goal) return null;
+
+  tdee = bmr * ACTIVITY_MULTIPLIERS[profile.activityLevel];
+  const rawCalories = Math.round(tdee * GOAL_MULTIPLIERS[profile.goal]);
+  const calorieFloor = profile.goal === 'lose' ? MIN_CALORIES[profile.gender!] : 0;
+  const calories = Math.max(rawCalories, calorieFloor);
+
+  const heightMetres = profile.height! / 100;
+  const bmi = profile.weight! / (heightMetres * heightMetres);
+  const weightAtBmi25 = 25 * heightMetres * heightMetres;
+  // Para IMC >= 30 se usa peso ajustado, evitando sobredimensionar la proteína.
+  const referenceWeight = bmi >= 30
+    ? weightAtBmi25 + 0.4 * (profile.weight! - weightAtBmi25)
+    : profile.weight!;
+  const proteinPerKg = PROTEIN_FACTORS[profile.activityLevel][profile.goal];
+  const desiredProtein = Math.round(referenceWeight * proteinPerKg);
+  // Limita proteína al 30 %: con 25 % de grasa deja al menos 45 % para carbohidratos.
+  const protein = Math.min(desiredProtein, Math.floor((calories * 0.30) / 4));
+  const fat = Math.round((calories * 0.25) / 9);
+  const carbs = Math.max(0, Math.round((calories - protein * 4 - fat * 9) / 4));
+
+  return {
+    calories,
+    protein,
+    carbs,
+    fat,
+    fiber: 25,
+    bmr: Math.round(bmr),
+    tdee: Math.round(tdee),
+    method: 'Mifflin-St Jeor',
+    proteinPerKg,
+    referenceWeight: Math.round(referenceWeight * 10) / 10,
+    calorieAdjustmentPercent: Math.round((GOAL_MULTIPLIERS[profile.goal] - 1) * 1000) / 10,
+    calorieFloorApplied: calories !== rawCalories
+  };
+}
 
 class ProfileService {
   async getProfile(userId: number): Promise<UserProfile> {
@@ -115,6 +226,7 @@ class ProfileService {
   }
 
   async updateProfile(userId: number, data: Partial<UserProfile>): Promise<UserProfile> {
+    validateUserProfile(data);
     const user = await prisma.user.update({
       where: { id: userId },
       data: {
@@ -162,53 +274,7 @@ class ProfileService {
 
   async getRecommendedMacros(userId: number): Promise<RecommendedMacros | null> {
     const profile = await this.getProfile(userId);
-
-    if (profile.customCalories) {
-      return {
-        calories: profile.customCalories,
-        protein: profile.customProtein || Math.round(profile.customCalories * 0.25 / 4),
-        carbs: profile.customCarbs || Math.round(profile.customCalories * 0.45 / 4),
-        fat: profile.customFat || Math.round(profile.customCalories * 0.30 / 9),
-        bmr: 0,
-        tdee: profile.customCalories
-      };
-    }
-
-    if (!profile.weight || !profile.height || !profile.age || !profile.gender) {
-      return null;
-    }
-
-    const activityLevel = profile.activityLevel || 'moderate';
-    const goal = profile.goal || 'maintain';
-
-    let bmr: number;
-    if (profile.gender === 'male') {
-      bmr = 10 * profile.weight + 6.25 * profile.height - 5 * profile.age + 5;
-    } else {
-      bmr = 10 * profile.weight + 6.25 * profile.height - 5 * profile.age - 161;
-    }
-
-    const tdee = bmr * ACTIVITY_MULTIPLIERS[activityLevel];
-    const minCalories = MIN_CALORIES[profile.gender as 'male' | 'female'];
-    const calculatedCalories = Math.round(tdee + GOAL_ADJUSTMENTS[goal]);
-    // Aplicar mínimo de seguridad
-    const calories = Math.max(calculatedCalories, minCalories);
-
-    const protein = Math.round(profile.weight * 2);
-    const fat = Math.round((calories * 0.25) / 9);
-    const proteinCalories = protein * 4;
-    const fatCalories = fat * 9;
-    const carbCalories = calories - proteinCalories - fatCalories;
-    const carbs = Math.round(carbCalories / 4);
-
-    return {
-      calories,
-      protein,
-      carbs,
-      fat,
-      bmr: Math.round(bmr),
-      tdee: Math.round(tdee)
-    };
+    return calculateRecommendedMacros(profile);
   }
 
   async getWeeklyNutrition(userId: number, startDate: Date, endDate: Date): Promise<WeeklyNutrition> {
