@@ -1604,6 +1604,43 @@ export class RecipeService {
       ingredient = null;
     }
 
+    const explicitVariantRows = Array.isArray(ingredientInput?.variants)
+      ? ingredientInput.variants
+      : Array.isArray(ingredientInput?.ingredient?.variants)
+        ? ingredientInput.ingredient.variants
+        : [];
+
+    const fallbackVariantNames =
+      explicitVariantRows.length > 0
+        ? explicitVariantRows
+            .map((variant: any) => this.normalizeIngredientName(variant?.name))
+            .filter(Boolean)
+        : [
+            this.normalizeIngredientName(
+              ingredientInput?.variantName ??
+                ingredientInput?.variant?.name ??
+                ingredientInput?.state ??
+                ingredientInput?.ingredient?.variantName ??
+                ingredientInput?.cookedVariantName ??
+                ingredientInput?.cookedVariant?.name ??
+                "Crudo",
+            ) || "Crudo",
+          ];
+
+    const defaultVariantPayload =
+      fallbackVariantNames.length > 0
+        ? fallbackVariantNames.map((variantName: string, index: number) => ({
+            name: variantName,
+            isDefault: index === 0,
+            weightFactor: 1,
+            calories: null,
+            protein: null,
+            carbs: null,
+            fat: null,
+            fiber: null,
+          }))
+        : [{ name: "Crudo", isDefault: true, weightFactor: 1 }];
+
     if (!ingredient && options.createNew) {
       ingredient = await prisma.ingredient.create({
         data: {
@@ -1613,7 +1650,7 @@ export class RecipeService {
           createdByUserId: userId,
           imageUrl: imageUrl?.trim() || null,
           variants: {
-            create: [{ name: "Crudo", isDefault: true, weightFactor: 1 }],
+            create: defaultVariantPayload,
           },
         },
         include: { variants: true, conversions: true },
