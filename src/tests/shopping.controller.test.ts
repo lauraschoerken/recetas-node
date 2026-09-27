@@ -89,6 +89,29 @@ describe('Shopping Controller', () => {
       expect(res.status).toBe(400);
     });
 
+    it('should add a consumed manual meal without recipe or ingredient', async () => {
+      const plannedDate = new Date().toISOString().split('T')[0];
+      const res = await request(app)
+        .post('/api/week-plan')
+        .set('Authorization', `Bearer ${testUser.token}`)
+        .send({
+          plannedDate,
+          manualTitle: 'Desayuno fuera de casa',
+          mealTime: '09:15',
+          manualCalories: 420,
+          manualProtein: 18,
+          consumed: true,
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.manualTitle).toBe('Desayuno fuera de casa');
+      expect(res.body.manualCalories).toBe(420);
+      expect(res.body.mealTime).toBe('09:15');
+      expect(res.body.consumed).toBe(true);
+      expect(res.body.recipeId).toBeNull();
+      expect(res.body.ingredientId).toBeNull();
+    });
+
     it('should return 400 without plannedDate', async () => {
       const res = await request(app)
         .post('/api/week-plan')
@@ -98,6 +121,40 @@ describe('Shopping Controller', () => {
         });
 
       expect(res.status).toBe(400);
+    });
+  });
+
+  describe('POST /api/week-plan/import', () => {
+    it('should import manual, recipe and ingredient entries together', async () => {
+      const date = new Date().toISOString().split('T')[0];
+      const ingredient = await prisma.ingredient.findUnique({ where: { id: ingredientId } });
+      const res = await request(app)
+        .post('/api/week-plan/import')
+        .set('Authorization', `Bearer ${testUser.token}`)
+        .send({
+          entries: [
+            { kind: 'manual', date, time: '08:00', title: 'Café y tostadas', calories: 300 },
+            { kind: 'recipe', date, recipeTitle: 'Recipe for Shopping', servings: 1 },
+            { kind: 'ingredient', date, ingredientName: ingredient!.name, quantity: 100, unit: 'g' },
+          ],
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.importedCount).toBe(3);
+      expect(res.body.entries).toHaveLength(3);
+      expect(res.body.entries.every((entry: any) => entry.consumed)).toBe(true);
+    });
+
+    it('should report the row when an imported reference does not exist', async () => {
+      const date = new Date().toISOString().split('T')[0];
+      const res = await request(app)
+        .post('/api/week-plan/import')
+        .set('Authorization', `Bearer ${testUser.token}`)
+        .send({ entries: [{ kind: 'recipe', date, recipeTitle: 'No existe' }] });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('fila 1');
+      expect(res.body.error).toContain('Receta no encontrada');
     });
   });
 
@@ -198,12 +255,13 @@ describe('Shopping Controller', () => {
       expect(Array.isArray(res.body)).toBe(true);
     });
 
-    it('should return 400 without dates', async () => {
+    it('should return pending items without requiring dates', async () => {
       const res = await request(app)
         .get('/api/shopping-list')
         .set('Authorization', `Bearer ${testUser.token}`);
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body)).toBe(true);
     });
   });
 });

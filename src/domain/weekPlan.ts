@@ -19,6 +19,14 @@ export interface WeekPlan {
   ingredientId: number | null;
   ingredientQty: number | null;
   ingredientUnit: string | null;
+  manualTitle: string | null;
+  manualCalories: number | null;
+  manualProtein: number | null;
+  manualCarbs: number | null;
+  manualFat: number | null;
+  manualFiber: number | null;
+  manualNotes: string | null;
+  mealTime: string | null;
   createdAt: Date;
 }
 
@@ -38,6 +46,15 @@ export interface CreateWeekPlanDto {
   ingredientId?: number;
   ingredientQty?: number;
   ingredientUnit?: string;
+  manualTitle?: string;
+  manualCalories?: number;
+  manualProtein?: number;
+  manualCarbs?: number;
+  manualFat?: number;
+  manualFiber?: number;
+  manualNotes?: string;
+  mealTime?: string;
+  consumed?: boolean;
   plannedDate: string;
   servings?: number;
   type?: WeekPlanType;

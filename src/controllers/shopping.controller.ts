@@ -101,6 +101,15 @@ export class ShoppingController {
       ingredientId?: number;
       ingredientQty?: number;
       ingredientUnit?: string;
+      manualTitle?: string;
+      manualCalories?: number;
+      manualProtein?: number;
+      manualCarbs?: number;
+      manualFat?: number;
+      manualFiber?: number;
+      manualNotes?: string;
+      mealTime?: string;
+      consumed?: boolean;
       plannedDate: string;
       servings?: number;
       type?: string;
@@ -119,15 +128,31 @@ export class ShoppingController {
       selections,
     } = body;
 
-    if (!recipeId && !ingredientId) {
+    if (!recipeId && !ingredientId && !body.manualTitle?.trim()) {
       throw {
         httpCode: 400,
-        message: "recipeId o ingredientId son requeridos",
+        message: "recipeId, ingredientId o manualTitle son requeridos",
       };
     }
 
     if (!plannedDate) {
       throw { httpCode: 400, message: "plannedDate es requerido" };
+    }
+
+    if (body.mealTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(body.mealTime)) {
+      throw { httpCode: 400, message: "mealTime debe tener formato HH:mm" };
+    }
+
+    for (const [field, value] of Object.entries({
+      manualCalories: body.manualCalories,
+      manualProtein: body.manualProtein,
+      manualCarbs: body.manualCarbs,
+      manualFat: body.manualFat,
+      manualFiber: body.manualFiber,
+    })) {
+      if (value != null && (!Number.isFinite(value) || value < 0)) {
+        throw { httpCode: 400, message: `${field} debe ser un número mayor o igual que 0` };
+      }
     }
 
     return shoppingService.addToWeekPlan(
@@ -136,6 +161,15 @@ export class ShoppingController {
         ingredientId,
         ingredientQty,
         ingredientUnit,
+        manualTitle: body.manualTitle,
+        manualCalories: body.manualCalories,
+        manualProtein: body.manualProtein,
+        manualCarbs: body.manualCarbs,
+        manualFat: body.manualFat,
+        manualFiber: body.manualFiber,
+        manualNotes: body.manualNotes,
+        mealTime: body.mealTime,
+        consumed: body.consumed,
         plannedDate,
         servings,
         type: (type as "meal" | "prep") || "meal",
@@ -143,6 +177,18 @@ export class ShoppingController {
       },
       req.userId!,
     );
+  }
+
+  @Post("/week-plan/import")
+  @HttpCode(201)
+  async importWeekPlan(
+    @Body() body: { entries?: unknown[] },
+    @Req() req: AuthRequest,
+  ) {
+    if (!Array.isArray(body.entries) || body.entries.length === 0) {
+      throw { httpCode: 400, message: "entries debe ser un array no vacío" };
+    }
+    return shoppingService.importWeekPlan(body.entries, req.userId!);
   }
 
   /**

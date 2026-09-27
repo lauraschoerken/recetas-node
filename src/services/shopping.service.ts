@@ -169,6 +169,29 @@ export class ShoppingService {
   > {
     const plannedDate = new Date(data.plannedDate + "T12:00:00");
 
+    // --- Manual entry (no recipe or ingredient required) ---
+    if (data.manualTitle?.trim() && !data.recipeId && !data.ingredientId) {
+      const plan = await prisma.weekPlan.create({
+        data: {
+          plannedDate,
+          servings: 1,
+          type: "meal",
+          consumed: data.consumed ?? true,
+          userId,
+          manualTitle: data.manualTitle.trim(),
+          manualCalories: data.manualCalories ?? null,
+          manualProtein: data.manualProtein ?? null,
+          manualCarbs: data.manualCarbs ?? null,
+          manualFat: data.manualFat ?? null,
+          manualFiber: data.manualFiber ?? null,
+          manualNotes: data.manualNotes?.trim() || null,
+          mealTime: data.mealTime || null,
+        },
+        include: this.weekPlanInclude,
+      });
+      return this.mapWeekPlanWithDetails(plan);
+    }
+
     // --- Ingredient-only entry (no recipe) ---
     if (data.ingredientId && !data.recipeId) {
       const ingredient = await prisma.ingredient.findUnique({
@@ -187,6 +210,8 @@ export class ShoppingService {
           ingredientId: data.ingredientId,
           ingredientQty: data.ingredientQty ?? 1,
           ingredientUnit: data.ingredientUnit ?? ingredient.unit,
+          consumed: data.consumed ?? false,
+          mealTime: data.mealTime || null,
         },
         include: this.weekPlanInclude,
       });
@@ -230,6 +255,8 @@ export class ShoppingService {
         type: planType,
         userId,
         recipeId: data.recipeId,
+        consumed: data.consumed ?? false,
+        mealTime: data.mealTime || null,
         ...(data.selections &&
           data.selections.length > 0 && {
             selections: {
@@ -250,7 +277,7 @@ export class ShoppingService {
     }[] = [];
 
     // If adding as meal, check if we have enough of this recipe and sub-recipes
-    if (planType === "meal") {
+    if (planType === "meal" && !data.consumed) {
       const selections = data.selections || [];
 
       // Get all recipes the user has at home
@@ -532,6 +559,105 @@ export class ShoppingService {
     }
 
     return result;
+  }
+
+  async importWeekPlan(entries: unknown[], userId: number) {
+    if (entries.length > 200) {
+      throw { httpCode: 400, message: "La importación admite un máximo de 200 entradas" };
+    }
+
+    const normalized: CreateWeekPlanDto[] = [];
+    const errors: { index: number; message: string }[] = [];
+
+    for (let index = 0; index < entries.length; index += 1) {
+      const raw = entries[index] as any;
+      if (!raw || typeof raw !== "object") {
+        errors.push({ index, message: "La entrada debe ser un objeto" });
+        continue;
+      }
+      const kind = String(raw.kind || raw.type || "manual").toLowerCase();
+      const plannedDate = String(raw.date || raw.plannedDate || "");
+      const parsedDate = new Date(`${plannedDate}T12:00:00`);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(plannedDate) || Number.isNaN(parsedDate.getTime())) {
+        errors.push({ index, message: "date debe tener formato YYYY-MM-DD" });
+        continue;
+      }
+      const suppliedTime = String(raw.time || raw.mealTime || "");
+      if (suppliedTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(suppliedTime)) {
+        errors.push({ index, message: "time debe tener formato HH:mm" });
+        continue;
+      }
+      const common = {
+        plannedDate,
+        mealTime: suppliedTime || undefined,
+        consumed: raw.consumed !== false,
+      };
+
+      if (kind === "manual") {
+        const title = String(raw.title || raw.manualTitle || "").trim();
+        if (!title) errors.push({ index, message: "Las comidas manuales necesitan title" });
+        else normalized.push({
+          ...common,
+          manualTitle: title,
+          manualCalories: this.optionalNonNegative(raw.calories ?? raw.manualCalories, index, "calories", errors),
+          manualProtein: this.optionalNonNegative(raw.protein ?? raw.manualProtein, index, "protein", errors),
+          manualCarbs: this.optionalNonNegative(raw.carbs ?? raw.manualCarbs, index, "carbs", errors),
+          manualFat: this.optionalNonNegative(raw.fat ?? raw.manualFat, index, "fat", errors),
+          manualFiber: this.optionalNonNegative(raw.fiber ?? raw.manualFiber, index, "fiber", errors),
+          manualNotes: raw.notes ? String(raw.notes) : undefined,
+        });
+        continue;
+      }
+
+      if (kind === "recipe") {
+        const recipe = raw.recipeId
+          ? await prisma.recipe.findFirst({ where: { id: Number(raw.recipeId), OR: [{ userId }, { isPublic: true }] } })
+          : await prisma.recipe.findFirst({
+              where: { title: { equals: String(raw.recipeTitle || raw.title || ""), mode: "insensitive" }, OR: [{ userId }, { isPublic: true }] },
+            });
+        if (!recipe) errors.push({ index, message: `Receta no encontrada: ${raw.recipeTitle || raw.title || raw.recipeId}` });
+        else normalized.push({ ...common, recipeId: recipe.id, servings: Number(raw.servings) || recipe.servings, type: "meal" });
+        continue;
+      }
+
+      if (kind === "ingredient") {
+        const ingredient = raw.ingredientId
+          ? await prisma.ingredient.findFirst({ where: { id: Number(raw.ingredientId), OR: [{ status: "GLOBAL" }, { createdByUserId: userId }] } })
+          : await prisma.ingredient.findFirst({
+              where: { name: { equals: String(raw.ingredientName || raw.name || ""), mode: "insensitive" }, OR: [{ status: "GLOBAL" }, { createdByUserId: userId }] },
+            });
+        if (!ingredient) errors.push({ index, message: `Ingrediente no encontrado: ${raw.ingredientName || raw.name || raw.ingredientId}` });
+        else {
+          const quantity = Number(raw.quantity ?? raw.ingredientQty);
+          if (!Number.isFinite(quantity) || quantity <= 0) errors.push({ index, message: "quantity debe ser mayor que 0" });
+          else normalized.push({ ...common, ingredientId: ingredient.id, ingredientQty: quantity, ingredientUnit: String(raw.unit || ingredient.unit) });
+        }
+        continue;
+      }
+      errors.push({ index, message: `kind no válido: ${kind}` });
+    }
+
+    if (errors.length > 0) {
+      const detail = errors
+        .slice(0, 5)
+        .map((error) => `fila ${error.index + 1}: ${error.message}`)
+        .join("; ");
+      throw { httpCode: 400, message: `Hay errores en el JSON: ${detail}`, errors };
+    }
+
+    const created = [];
+    for (const entry of normalized) created.push(await this.addToWeekPlan(entry, userId));
+    return { importedCount: created.length, entries: created };
+  }
+
+  private optionalNonNegative(value: unknown, index: number, field: string, errors: { index: number; message: string }[]) {
+    if (value === undefined || value === null || value === "") return undefined;
+    const number = Number(value);
+    if (!Number.isFinite(number) || number < 0) {
+      errors.push({ index, message: `${field} debe ser un número mayor o igual que 0` });
+      return undefined;
+    }
+    return number;
   }
 
   private async addIngredientsToShoppingList(
@@ -1851,6 +1977,14 @@ export class ShoppingService {
       ingredientId: plan.ingredientId || null,
       ingredientQty: plan.ingredientQty || null,
       ingredientUnit: plan.ingredientUnit || null,
+      manualTitle: plan.manualTitle || null,
+      manualCalories: plan.manualCalories ?? null,
+      manualProtein: plan.manualProtein ?? null,
+      manualCarbs: plan.manualCarbs ?? null,
+      manualFat: plan.manualFat ?? null,
+      manualFiber: plan.manualFiber ?? null,
+      manualNotes: plan.manualNotes || null,
+      mealTime: plan.mealTime || null,
       createdAt: plan.createdAt,
       recipe: plan.recipe
         ? {

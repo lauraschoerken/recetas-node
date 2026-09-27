@@ -271,6 +271,12 @@ class ProfileService {
         }
       },
       include: {
+        ingredient: {
+          include: {
+            conversions: true,
+            variants: true
+          }
+        },
         recipe: {
           include: {
             ingredients: {
@@ -361,6 +367,33 @@ class ProfileService {
     let fiber = 0;
 
     for (const plan of plans) {
+      if (plan.manualTitle) {
+        calories += plan.manualCalories || 0;
+        protein += plan.manualProtein || 0;
+        carbs += plan.manualCarbs || 0;
+        fat += plan.manualFat || 0;
+        fiber += plan.manualFiber || 0;
+        continue;
+      }
+
+      if (plan.ingredient && plan.ingredientQty) {
+        const ing = plan.ingredient;
+        const variant = ing.variants?.find((v: any) => v.isDefault) || ing.variants?.[0];
+        const baseQuantity = this.getQuantityInGrams(
+          plan.ingredientQty,
+          plan.ingredientUnit,
+          ing.unit,
+          ing.conversions || []
+        );
+        const factor = ing.unit === 'g' || ing.unit === 'ml' ? baseQuantity / 100 : baseQuantity;
+        calories += (variant?.calories || 0) * factor;
+        protein += (variant?.protein || 0) * factor;
+        carbs += (variant?.carbs || 0) * factor;
+        fat += (variant?.fat || 0) * factor;
+        fiber += (variant?.fiber || 0) * factor;
+        continue;
+      }
+
       if (plan.recipe) {
         const servingRatio = plan.servings / plan.recipe.servings;
         const nutrition = this.calculateRecipeNutrition(plan.recipe, servingRatio, plan.selections || []);
