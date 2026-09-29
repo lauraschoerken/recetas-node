@@ -68,6 +68,7 @@ export interface ShoppingItem {
   totalQuantity: number;
   quantityAtHome: number;
   quantityToBuy: number;
+  manualQuantity?: number;
   // Unidad preferida (ej: "3 dientes" en lugar de "12 g")
   preferredUnit?: string | null;
   preferredQuantity?: number | null;

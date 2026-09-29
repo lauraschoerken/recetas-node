@@ -1039,8 +1039,8 @@ export class ShoppingService {
       }
     }
 
-    // Fusionar items manuales (añadidos desde "Añadir a la compra") en ingredientNeeds ANTES del
-    // cálculo de stock en casa, para que también se beneficien de la deducción de inventario
+    // Las peticiones manuales se mantienen separadas de las necesidades de recetas:
+    // si el usuario añade algo expresamente al carrito, el stock de casa no debe anularlo.
     const earlyManualItems = await prisma.shoppingItem.findMany({
       where: {
         ...(sharing.shareShopping && sharing.householdId
@@ -1075,6 +1075,7 @@ export class ShoppingService {
       }
     }
 
+    const manualNeeds = new Map<number, number>();
     for (const item of earlyManualItems) {
       if (!item.ingredientId || !item.ingredient) continue;
       const globalConversions = (item.ingredient as any).conversions || [];
@@ -1093,14 +1094,16 @@ export class ShoppingService {
         item.unit,
         mergedIngredient,
       );
+      manualNeeds.set(
+        item.ingredientId,
+        (manualNeeds.get(item.ingredientId) || 0) + quantityInBase,
+      );
       const existing = ingredientNeeds.get(item.ingredientId);
-      if (existing) {
-        existing.rawEquivalent += quantityInBase;
-      } else {
+      if (!existing) {
         ingredientNeeds.set(item.ingredientId, {
-          rawEquivalent: quantityInBase,
+          rawEquivalent: 0,
           name: item.ingredient.name,
-          ingredientData: item.ingredient,
+          ingredientData: mergedIngredient,
         });
       }
     }
@@ -1233,25 +1236,42 @@ export class ShoppingService {
       { rawEquivalent, name, ingredientData },
     ] of ingredientNeeds) {
       const atHomeRaw = homeQuantities.get(ingredientId) || 0;
-      const toBuyRaw = Math.max(0, rawEquivalent - atHomeRaw);
+      const manualRaw = manualNeeds.get(ingredientId) || 0;
+      const recipeShortfallRaw = Math.max(0, rawEquivalent - atHomeRaw);
+      const toBuyRaw = recipeShortfallRaw + manualRaw;
       const baseUnit = ingredientData.unit; // g o ml
 
       // Calcular cantidad en unidad preferida si existe
       let preferredUnit: string | null = null;
       let preferredQuantity: number | null = null;
 
-      if (ingredientData.preferredUnit && toBuyRaw > 0) {
+      if (ingredientData.preferredUnit) {
         const conversions = ingredientData.conversions || [];
         const conversion = conversions.find(
           (c: any) =>
             c.unitName.toLowerCase() ===
             ingredientData.preferredUnit.toLowerCase(),
         );
+        const preferredNormalized = ingredientData.preferredUnit.toLowerCase();
+        const baseNormalized = baseUnit.toLowerCase();
+        const standardFactor =
+          (baseNormalized === "g" &&
+            ["kg", "kilo", "kilogramo", "kilogram"].includes(
+              preferredNormalized,
+            )) ||
+          (baseNormalized === "ml" &&
+            ["l", "litro", "liter"].includes(preferredNormalized))
+            ? 1000
+            : preferredNormalized === baseNormalized
+              ? 1
+              : null;
+        const preferredFactor = conversion?.gramsPerUnit || standardFactor;
 
-        if (conversion && conversion.gramsPerUnit > 0) {
+        if (preferredFactor && preferredFactor > 0) {
           preferredUnit = ingredientData.preferredUnit;
-          // Ceiling: aunque se necesiten 10g y el pack sea 250g, hay que comprar 1 pack entero
-          preferredQuantity = Math.ceil(toBuyRaw / conversion.gramsPerUnit);
+          // Mantener la cantidad física exacta. El usuario puede decidir después si compra más.
+          preferredQuantity =
+            Math.round((toBuyRaw / preferredFactor) * 1000) / 1000;
         }
       }
 
@@ -1263,6 +1283,7 @@ export class ShoppingService {
         quantityAtHome:
           Math.round(Math.min(rawEquivalent, atHomeRaw) * 10) / 10,
         quantityToBuy: Math.round(toBuyRaw * 10) / 10,
+        manualQuantity: Math.round(manualRaw * 10) / 10,
         preferredUnit,
         preferredQuantity,
         conversions: (ingredientData.conversions || []).map((c: any) => ({
@@ -1273,12 +1294,12 @@ export class ShoppingService {
     }
 
     const resultList = result
-      .filter((item) => item.quantityToBuy > 0)
+      .filter(
+        (item) => item.totalQuantity > 0 || (item.manualQuantity ?? 0) > 0,
+      )
       .sort((a, b) => a.name.localeCompare(b.name));
 
-    // NOTA: los items manuales ya fueron fusionados en ingredientNeeds antes del cálculo de
-    // stock en casa, por lo que están incluidos en resultList con deducción de inventario aplicada.
-    // Ya no se necesita un bucle separado para ellos.
+    // Los items manuales se suman a lo que se desea comprar, no a lo que piden las recetas.
     // Los items manuales con productId (sin ingredientId) no aplican aquí.
 
     return resultList.sort((a, b) => a.name.localeCompare(b.name));
@@ -1296,6 +1317,37 @@ export class ShoppingService {
     let added = 0;
 
     for (const item of items) {
+      const ingredient = await prisma.ingredient.findUnique({
+        where: { id: item.ingredientId },
+        include: { conversions: true },
+      });
+      if (!ingredient) throw new Error("Ingrediente no encontrado");
+
+      const conversionOverrides =
+        await prisma.ingredientConversionUserOverride.findMany({
+          where: { userId, ingredientId: item.ingredientId },
+        });
+      const globalUnitNames = new Set(
+        ingredient.conversions.map((conversion) =>
+          conversion.unitName.toLowerCase(),
+        ),
+      );
+      const ingredientWithConversions = {
+        ...ingredient,
+        conversions: [
+          ...ingredient.conversions,
+          ...conversionOverrides.filter(
+            (conversion) =>
+              !globalUnitNames.has(conversion.unitName.toLowerCase()),
+          ),
+        ],
+      };
+      const quantityInBase = this.convertToBaseUnit(
+        item.quantity,
+        item.unit,
+        ingredientWithConversions,
+      );
+
       const existing = await prisma.shoppingItem.findFirst({
         where: {
           ...shoppingOwnerFilter,
@@ -1306,17 +1358,25 @@ export class ShoppingService {
       });
 
       if (existing) {
+        const existingQuantityInBase = this.convertToBaseUnit(
+          existing.quantity,
+          existing.unit,
+          ingredientWithConversions,
+        );
         await prisma.shoppingItem.update({
           where: { id: existing.id },
-          data: { quantity: existing.quantity + item.quantity },
+          data: {
+            quantity: existingQuantityInBase + quantityInBase,
+            unit: ingredient.unit,
+          },
         });
       } else {
         await prisma.shoppingItem.create({
           data: {
             userId,
             ingredientId: item.ingredientId,
-            quantity: item.quantity,
-            unit: item.unit,
+            quantity: quantityInBase,
+            unit: ingredient.unit,
             ...(sharing.shareShopping && sharing.householdId
               ? { householdId: sharing.householdId }
               : {}),
@@ -1399,8 +1459,8 @@ export class ShoppingService {
     usedUnit: string,
     ingredient: any,
   ): number {
-    const baseUnit = ingredient.unit; // 'g' o 'ml'
-    const u = usedUnit.toLowerCase();
+    const baseUnit = ingredient.unit.toLowerCase(); // 'g' o 'ml'
+    const u = usedUnit.trim().toLowerCase();
 
     // Ya estÃ¡ en unidad base
     if (u === baseUnit || u === "g" || u === "ml") {
@@ -1408,7 +1468,11 @@ export class ShoppingService {
     }
 
     // Conversiones estÃ¡ndar
-    if (u === "kg" || u === "l") {
+    if (
+      (baseUnit === "g" &&
+        ["kg", "kilo", "kilogramo", "kilogram"].includes(u)) ||
+      (baseUnit === "ml" && ["l", "litro", "liter"].includes(u))
+    ) {
       return quantity * 1000;
     }
 

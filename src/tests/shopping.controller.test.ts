@@ -263,5 +263,42 @@ describe('Shopping Controller', () => {
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body)).toBe(true);
     });
+
+    it('should merge manual quantities without changing their physical amount', async () => {
+      await prisma.unitConversion.upsert({
+        where: { ingredientId_unitName: { ingredientId, unitName: 'kg' } },
+        create: { ingredientId, unitName: 'kg', gramsPerUnit: 1000 },
+        update: { gramsPerUnit: 1000 },
+      });
+      await prisma.ingredient.update({
+        where: { id: ingredientId },
+        data: { preferredUnit: 'kg' },
+      });
+
+      for (const item of [
+        { quantity: 1000, unit: 'g' },
+        { quantity: 1, unit: 'kg' },
+      ]) {
+        const addRes = await request(app)
+          .post('/api/shopping-list/add')
+          .set('Authorization', `Bearer ${testUser.token}`)
+          .send({ items: [{ ingredientId, ...item }] });
+        expect(addRes.status).toBe(201);
+      }
+
+      const stored = await prisma.shoppingItem.findFirst({
+        where: { userId: testUser.id, ingredientId, weekPlanId: null, purchased: false },
+      });
+      expect(stored?.quantity).toBe(2000);
+      expect(stored?.unit).toBe('g');
+
+      const res = await request(app)
+        .get('/api/shopping-list')
+        .set('Authorization', `Bearer ${testUser.token}`);
+      const item = res.body.find((entry: { ingredientId: number }) => entry.ingredientId === ingredientId);
+      expect(item.manualQuantity).toBe(2000);
+      expect(item.preferredUnit).toBe('kg');
+      expect(item.preferredQuantity).toBeCloseTo(item.quantityToBuy / 1000, 3);
+    });
   });
 });
