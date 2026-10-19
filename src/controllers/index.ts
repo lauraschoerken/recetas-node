@@ -11,3 +11,4 @@ export { HouseholdController } from "./household.controller";
 export { AlertController } from "./alert.controller";
 export { BackupController } from "./backup.controller";
 export { PdfController } from "./pdf.controller";
+export { WorkoutController, WorkoutTemplateController } from "./workout.controller";

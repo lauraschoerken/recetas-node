@@ -21,6 +21,7 @@ import { AlertController } from "./controllers/alert.controller";
 import { BackupController } from "./controllers/backup.controller";
 import { PdfController } from "./controllers/pdf.controller";
 import { ProductController } from "./controllers/product.controller";
+import { WorkoutController, WorkoutTemplateController } from "./controllers/workout.controller";
 
 dotenv.config();
 
@@ -75,6 +76,8 @@ useExpressServer(app, {
     BackupController,
     PdfController,
     ProductController,
+    WorkoutController,
+    WorkoutTemplateController,
   ],
   defaultErrorHandler: false,
 });

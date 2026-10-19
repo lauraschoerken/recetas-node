@@ -131,6 +131,7 @@ export class ProfileController {
       weight?: number;
       height?: number;
       age?: number;
+      birthDate?: string;
       gender?: string;
       activityLevel?: string;
       goal?: string;

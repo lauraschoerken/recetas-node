@@ -19,6 +19,7 @@ model User {
   weight         Float?
   height         Float?
   age            Int?
+  birthDate      DateTime?  @db.Date
   gender         String?
   activityLevel  String?
   goal           String?
@@ -31,6 +32,8 @@ model User {
   planningAlertScope String?                 // "own" | "all"
   recipes        Recipe[]
   weekPlans      WeekPlan[]
+  workouts       Workout[]
+  workoutTemplates WorkoutTemplate[]
   homeItems      HomeItem[]
   shoppingItems  ShoppingItem[]
   shoppingOverrides ShoppingOverride[]
@@ -65,6 +68,44 @@ model User {
   submittedProductProposals ProductProposal[]                 @relation("ProductProposalCreator")
   reviewedProductProposals  ProductProposal[]                 @relation("ProductProposalReviewer")
   hiddenProducts            ProductUserHide[]
+}
+
+model Workout {
+  id                Int      @id @default(autoincrement())
+  title             String
+  performedAt       DateTime
+  durationMinutes   Int?
+  caloriesBurned    Int?
+  averageHeartRate  Int?
+  notes              String?
+  exercises          String?
+  addCaloriesToGoal Boolean  @default(false)
+  userId             Int
+  templateId         Int?
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  template           WorkoutTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([userId, performedAt])
+}
+
+model WorkoutTemplate {
+  id                       Int      @id @default(autoincrement())
+  title                    String
+  durationMinutes          Int?
+  caloriesBurned           Int?
+  averageHeartRate         Int?
+  exercises                String?
+  notes                    String?
+  defaultAddCaloriesToGoal Boolean  @default(false)
+  userId                   Int
+  user                     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workouts                 Workout[]
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  @@unique([userId, title])
 }
 
 model Recipe {

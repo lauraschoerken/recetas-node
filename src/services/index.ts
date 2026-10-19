@@ -12,3 +12,4 @@ export { householdService } from "./household.service";
 export { alertService } from "./alert.service";
 export { backupService } from "./backup.service";
 export { pdfService } from "./pdf.service";
+export { workoutService } from "./workout.service";

@@ -11,6 +11,7 @@ export interface UserProfile {
   weight?: number;
   height?: number;
   age?: number;
+  birthDate?: string;
   gender?: Gender;
   activityLevel?: ActivityLevel;
   goal?: Goal;
@@ -43,6 +44,8 @@ export interface DailyNutrition {
   carbs: number;
   fat: number;
   fiber: number;
+  exerciseCalories: number;
+  calorieTargetAdjustment: number;
 }
 
 export interface WeeklyNutrition {
@@ -106,6 +109,13 @@ export function validateUserProfile(data: Partial<UserProfile>) {
   validateRange('weight', data.weight, 25, 350);
   validateRange('height', data.height, 100, 250);
   validateRange('age', data.age, 18, 120, true);
+  if (data.birthDate != null) {
+    const birthDate = new Date(`${data.birthDate}T00:00:00.000Z`);
+    const age = getAge(birthDate);
+    if (Number.isNaN(birthDate.getTime()) || age < 18 || age > 120) {
+      throw { httpCode: 400, message: 'La fecha de nacimiento debe corresponder a una edad entre 18 y 120 años' };
+    }
+  }
   validateRange('customCalories', data.customCalories, 800, 10000, true);
   validateRange('customProtein', data.customProtein, 0, 1000, true);
   validateRange('customCarbs', data.customCarbs, 0, 1500, true);
@@ -121,6 +131,13 @@ export function validateUserProfile(data: Partial<UserProfile>) {
   if (data.goal != null && !VALID_GOALS.includes(data.goal)) {
     throw { httpCode: 400, message: 'goal no es válido' };
   }
+}
+
+function getAge(birthDate: Date, today = new Date()): number {
+  let age = today.getUTCFullYear() - birthDate.getUTCFullYear();
+  const month = today.getUTCMonth() - birthDate.getUTCMonth();
+  if (month < 0 || (month === 0 && today.getUTCDate() < birthDate.getUTCDate())) age--;
+  return age;
 }
 
 export function calculateRecommendedMacros(profile: UserProfile): RecommendedMacros | null {
@@ -198,6 +215,7 @@ class ProfileService {
         weight: true,
         height: true,
         age: true,
+        birthDate: true,
         gender: true,
         activityLevel: true,
         goal: true,
@@ -217,7 +235,8 @@ class ProfileService {
       imageUrl: user.imageUrl ?? undefined,
       weight: user.weight ?? undefined,
       height: user.height ?? undefined,
-      age: user.age ?? undefined,
+      birthDate: user.birthDate ? user.birthDate.toISOString().slice(0, 10) : undefined,
+      age: user.birthDate ? getAge(user.birthDate) : user.age ?? undefined,
       gender: user.gender as Gender | undefined,
       activityLevel: user.activityLevel as ActivityLevel | undefined,
       goal: user.goal as Goal | undefined,
@@ -237,6 +256,7 @@ class ProfileService {
         imageUrl: data.imageUrl,
         weight: data.weight,
         height: data.height,
+        birthDate: data.birthDate ? new Date(`${data.birthDate}T00:00:00.000Z`) : undefined,
         age: data.age,
         gender: data.gender,
         activityLevel: data.activityLevel,
@@ -252,6 +272,7 @@ class ProfileService {
         weight: true,
         height: true,
         age: true,
+        birthDate: true,
         gender: true,
         activityLevel: true,
         goal: true,
@@ -267,7 +288,8 @@ class ProfileService {
       imageUrl: user.imageUrl ?? undefined,
       weight: user.weight ?? undefined,
       height: user.height ?? undefined,
-      age: user.age ?? undefined,
+      birthDate: user.birthDate ? user.birthDate.toISOString().slice(0, 10) : undefined,
+      age: user.birthDate ? getAge(user.birthDate) : user.age ?? undefined,
       gender: user.gender as Gender | undefined,
       activityLevel: user.activityLevel as ActivityLevel | undefined,
       goal: user.goal as Goal | undefined,
@@ -439,6 +461,16 @@ class ProfileService {
     let fat = 0;
     let fiber = 0;
 
+    const workouts = await prisma.workout.findMany({
+      where: { userId, performedAt: { gte: startOfDay, lte: endOfDay } },
+      select: { caloriesBurned: true, addCaloriesToGoal: true }
+    });
+    const exerciseCalories = workouts.reduce((sum, workout) => sum + (workout.caloriesBurned || 0), 0);
+    const calorieTargetAdjustment = workouts.reduce(
+      (sum, workout) => sum + (workout.addCaloriesToGoal ? workout.caloriesBurned || 0 : 0),
+      0
+    );
+
     for (const plan of plans) {
       if (plan.manualTitle) {
         calories += plan.manualCalories || 0;
@@ -488,7 +520,9 @@ class ProfileService {
       protein: Math.round(protein),
       carbs: Math.round(carbs),
       fat: Math.round(fat),
-      fiber: Math.round(fiber)
+      fiber: Math.round(fiber),
+      exerciseCalories,
+      calorieTargetAdjustment
     };
   }
 

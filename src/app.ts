@@ -19,6 +19,7 @@ import { PdfController } from "./controllers/pdf.controller";
 import { TestController } from "./controllers/test.controller";
 import { ProductController } from "./controllers/product.controller";
 import { ProfileController } from "./controllers/profile.controller";
+import { WorkoutController, WorkoutTemplateController } from "./controllers/workout.controller";
 
 export function createApp() {
   const app = express();
@@ -69,6 +70,8 @@ export function createApp() {
     PdfController,
     ProductController,
     ProfileController,
+    WorkoutController,
+    WorkoutTemplateController,
   ];
 
   // Agregar TestController solo en entorno de test
