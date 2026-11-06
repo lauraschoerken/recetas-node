@@ -411,10 +411,22 @@ export class IngredientService {
     } else {
       const allowedSortFields = ["name", "createdAt", "updatedAt"];
       const safeSortBy = allowedSortFields.includes(sortBy) ? sortBy : "name";
+      const safeSortOrder: Prisma.SortOrder =
+        sortOrder === "desc" ? "desc" : "asc";
+      const orderBy: Prisma.IngredientOrderByWithRelationInput[] =
+        safeSortBy === "name"
+          ? [{ name: safeSortOrder }, { id: "asc" }]
+          : [
+              { [safeSortBy]: safeSortOrder },
+              { name: "asc" },
+              { id: "asc" },
+            ];
       const [raw, count] = await prisma.$transaction([
         prisma.ingredient.findMany({
           where,
-          orderBy: { [safeSortBy]: sortOrder === "desc" ? "desc" : "asc" },
+          // El desempate evita saltos aparentemente aleatorios cuando muchos
+          // ingredientes comparten fecha de creación/modificación (p. ej. imports).
+          orderBy,
           include: ingredientInclude,
           ...(page && pageSize
             ? { skip: (page - 1) * pageSize, take: pageSize }
