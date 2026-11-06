@@ -68,6 +68,7 @@ model User {
   submittedProductProposals ProductProposal[]                 @relation("ProductProposalCreator")
   reviewedProductProposals  ProductProposal[]                 @relation("ProductProposalReviewer")
   hiddenProducts            ProductUserHide[]
+  hiddenRecipes             RecipeUserHide[]
 }
 
 model Workout {
@@ -135,6 +136,20 @@ model Recipe {
   homeItems      HomeItem[]
   usedInOptions  RecipeComponentOption[]  @relation("OptionRecipe")
   minThresholds  RecipeMinThreshold[]
+  hiddenByUsers  RecipeUserHide[]
+}
+
+// Recetas públicas que cada usuario ha decidido ocultar de su biblioteca.
+model RecipeUserHide {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  recipeId  Int
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe    Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, recipeId])
+  @@index([recipeId])
 }
 
 model RecipeComponent {
@@ -177,6 +192,8 @@ model Ingredient {
   preferredUnit   String?                 // Unidad preferida para mostrar en lista de compra (ej: "diente" para ajo)
   imageUrl        String?
   defaultLocation String?
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
   createdBy       User?                   @relation("UserCreatedIngredients", fields: [createdByUserId], references: [id], onDelete: SetNull)
   recipes         RecipeIngredient[]
   componentOptions RecipeComponentOption[]

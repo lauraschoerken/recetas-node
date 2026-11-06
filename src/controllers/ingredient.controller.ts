@@ -36,7 +36,7 @@ export class IngredientController {
    *         schema: { type: string }
    *       - in: query
    *         name: sortBy
-   *         schema: { type: string, enum: [name, calories, protein, carbs, fat, fiber] }
+   *         schema: { type: string, enum: [name, createdAt, updatedAt, calories, protein, carbs, fat, fiber] }
    *       - in: query
    *         name: sortOrder
    *         schema: { type: string, enum: [asc, desc] }
@@ -88,6 +88,7 @@ export class IngredientController {
     @QueryParam("search") search?: string,
     @QueryParam("sortBy") sortBy?: string,
     @QueryParam("sortOrder") sortOrder?: string,
+    @QueryParam("author") author?: number,
     @QueryParam("location") location?: string,
     @QueryParam("statusFilter") statusFilter?: string,
     @QueryParam("hasNutrition") hasNutrition?: boolean,
@@ -116,6 +117,7 @@ export class IngredientController {
       userId: req?.userId,
       sortBy,
       sortOrder: sortOrder as "asc" | "desc" | undefined,
+      authorId: author,
       location,
       statusFilter,
       hasNutrition,
@@ -129,6 +131,11 @@ export class IngredientController {
       maxFat,
       tagIds,
     });
+  }
+
+  @Get("/authors")
+  async getAuthors(@Req() req: AuthRequest) {
+    return ingredientService.getAuthors(req.userId!);
   }
 
   /**
@@ -345,8 +352,12 @@ export class IngredientController {
    */
   @Delete("/:id")
   @HttpCode(204)
-  async delete(@Param("id") id: number) {
-    const deleted = await ingredientService.delete(id);
+  async delete(@Param("id") id: number, @Req() req: AuthRequest) {
+    const deleted = await ingredientService.delete(
+      id,
+      req.userId,
+      req.userRole,
+    );
     if (!deleted) {
       throw { httpCode: 404, message: "Ingrediente no encontrado" };
     }

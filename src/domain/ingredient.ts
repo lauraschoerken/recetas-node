@@ -23,6 +23,10 @@ export interface Ingredient {
   id: number;
   name: string;
   unit: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+  createdByUserId?: number | null;
+  createdBy?: { id: number; name: string } | null;
   preferredUnit?: string | null; // Unidad preferida para lista de compra (ej: "diente" para ajo)
   imageUrl?: string | null;
   conversions?: UnitConversion[];

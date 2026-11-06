@@ -7,8 +7,10 @@ import {
   cleanupTestIngredient,
   TestUser,
 } from "./helpers";
+import { PrismaClient } from "@prisma/client";
 
 const app = createApp();
+const prisma = new PrismaClient();
 
 describe("Recipe Controller", () => {
   let testUser: TestUser;
@@ -199,6 +201,69 @@ describe("Recipe Controller", () => {
         .set("Authorization", `Bearer ${testUser.token}`);
 
       expect(res.status).toBe(404);
+    });
+  });
+
+  describe("admin recipe editing", () => {
+    let owner: TestUser;
+    let admin: TestUser;
+    let privateRecipeId: number;
+
+    beforeAll(async () => {
+      owner = await createTestUser("admin_recipe_owner");
+      admin = await createTestUser("admin_recipe_editor");
+      await prisma.user.update({
+        where: { id: admin.id },
+        data: { role: "ADMIN" },
+      });
+
+      const recipeRes = await request(app)
+        .post("/api/recipes")
+        .set("Authorization", `Bearer ${owner.token}`)
+        .send({
+          title: `Private recipe for admin ${Date.now()}`,
+          isPublic: false,
+          ingredients: [
+            { name: `admin_edit_ing_${Date.now()}`, quantity: 50, unit: "g" },
+          ],
+        });
+      privateRecipeId = recipeRes.body.id;
+    });
+
+    afterAll(async () => {
+      await cleanupTestUser(owner.id);
+      await cleanupTestUser(admin.id);
+    });
+
+    it("lets an admin view and update a recipe owned by another user", async () => {
+      const getRes = await request(app)
+        .get(`/api/recipes/${privateRecipeId}`)
+        .set("Authorization", `Bearer ${admin.token}`);
+
+      expect(getRes.status).toBe(200);
+      expect(getRes.body.userId).toBe(owner.id);
+
+      const updateRes = await request(app)
+        .put(`/api/recipes/${privateRecipeId}`)
+        .set("Authorization", `Bearer ${admin.token}`)
+        .send({ title: "Recipe updated by admin" });
+
+      expect(updateRes.status).toBe(200);
+      expect(updateRes.body.title).toBe("Recipe updated by admin");
+      expect(updateRes.body.userId).toBe(owner.id);
+    });
+
+    it("includes private recipes from other users in the admin list", async () => {
+      const res = await request(app)
+        .get("/api/recipes")
+        .set("Authorization", `Bearer ${admin.token}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: privateRecipeId, userId: owner.id }),
+        ]),
+      );
     });
   });
 });

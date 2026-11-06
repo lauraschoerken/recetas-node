@@ -159,6 +159,53 @@ describe("Recipe Controller — Filtros, Paginación y Permisos", () => {
         expect(recipe.userId).toBe(userA.id);
       });
     });
+
+    it("permite ocultar y restaurar una receta pública solo para el usuario", async () => {
+      const hideRes = await request(app)
+        .post(`/api/recipes/${publicRecipeId}/hide`)
+        .set("Authorization", `Bearer ${userA.token}`);
+      expect(hideRes.status).toBe(200);
+
+      const listWhileHidden = await request(app)
+        .get("/api/recipes")
+        .set("Authorization", `Bearer ${userA.token}`);
+      expect(listWhileHidden.body.data.map((r: any) => r.id)).not.toContain(
+        publicRecipeId,
+      );
+
+      const hidden = await request(app)
+        .get("/api/recipes/hidden")
+        .set("Authorization", `Bearer ${userA.token}`);
+      expect(hidden.status).toBe(200);
+      expect(hidden.body.map((r: any) => r.id)).toContain(publicRecipeId);
+
+      const ownerList = await request(app)
+        .get("/api/recipes?visibility=mine")
+        .set("Authorization", `Bearer ${userB.token}`);
+      expect(ownerList.body.data.map((r: any) => r.id)).toContain(
+        publicRecipeId,
+      );
+
+      const unhideRes = await request(app)
+        .delete(`/api/recipes/${publicRecipeId}/hide`)
+        .set("Authorization", `Bearer ${userA.token}`);
+      expect(unhideRes.status).toBe(200);
+
+      const listRestored = await request(app)
+        .get("/api/recipes")
+        .set("Authorization", `Bearer ${userA.token}`);
+      expect(listRestored.body.data.map((r: any) => r.id)).toContain(
+        publicRecipeId,
+      );
+    });
+
+    it("no permite ocultar una receta propia", async () => {
+      const res = await request(app)
+        .post(`/api/recipes/${publicRecipeId}/hide`)
+        .set("Authorization", `Bearer ${userB.token}`);
+
+      expect(res.status).toBe(404);
+    });
   });
 
   // ── Permisos de propietario ─────────────────────────────────────────────────

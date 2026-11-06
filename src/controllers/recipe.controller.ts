@@ -115,6 +115,7 @@ export class RecipeController {
       sortBy,
       sortOrder,
       authorId: author,
+      userRole: req.userRole,
     });
   }
 
@@ -130,7 +131,12 @@ export class RecipeController {
    */
   @Get("/authors")
   async getAuthors(@Req() req: AuthRequest) {
-    return recipeService.getAuthors(req.userId!);
+    return recipeService.getAuthors(req.userId!, req.userRole);
+  }
+
+  @Get("/hidden")
+  async getHidden(@Req() req: AuthRequest) {
+    return recipeService.getHidden(req.userId!);
   }
 
   /**
@@ -158,7 +164,7 @@ export class RecipeController {
    */
   @Get("/:id")
   async getById(@Param("id") id: number, @Req() req: AuthRequest) {
-    const recipe = await recipeService.getById(id, req.userId!);
+    const recipe = await recipeService.getById(id, req.userId!, req.userRole);
 
     if (!recipe) {
       throw { httpCode: 404, message: "Receta no encontrada" };
@@ -242,7 +248,12 @@ export class RecipeController {
     @Body() body: UpdateRecipeDto,
     @Req() req: AuthRequest,
   ) {
-    const recipe = await recipeService.update(id, body, req.userId!);
+    const recipe = await recipeService.update(
+      id,
+      body,
+      req.userId!,
+      req.userRole,
+    );
 
     if (!recipe) {
       throw { httpCode: 404, message: "Receta no encontrada" };
@@ -279,6 +290,18 @@ export class RecipeController {
     }
 
     return null;
+  }
+
+  @Post("/:id/hide")
+  async hide(@Param("id") id: number, @Req() req: AuthRequest) {
+    await recipeService.hide(id, req.userId!);
+    return { success: true };
+  }
+
+  @Delete("/:id/hide")
+  async unhide(@Param("id") id: number, @Req() req: AuthRequest) {
+    await recipeService.unhide(id, req.userId!);
+    return { success: true };
   }
 
   /**

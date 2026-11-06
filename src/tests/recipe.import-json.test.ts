@@ -416,4 +416,91 @@ describe("Recipe JSON import - ingredient state and conversions", () => {
     expect(ingredient?.variants.some((v) => v.name === "Crudo")).toBe(true);
     expect(ingredient?.conversions.some((c) => c.unitName === "kg")).toBe(true);
   });
+
+  it("links a newly created private ingredient to the imported recipe", async () => {
+    const suffix = Date.now();
+    const ingredientName = `Azúcar importado ${suffix}`;
+    const title = `Receta azúcar ${suffix}`;
+
+    await recipeService.importFromJson(
+      [
+        {
+          title,
+          servings: 2,
+          ingredients: [{ name: ingredientName, quantity: 70, unit: "g" }],
+        },
+      ],
+      user.id,
+      {
+        [`${title}|0|${ingredientName}|new`]: {
+          name: ingredientName,
+          createNew: true,
+        },
+      },
+    );
+
+    const ingredient = await prisma.ingredient.findFirst({
+      where: { name: ingredientName, createdByUserId: user.id },
+    });
+    const recipe = await prisma.recipe.findFirst({
+      where: { title, userId: user.id },
+      include: { ingredients: true },
+    });
+
+    expect(ingredient?.status).toBe("PRIVATE");
+    expect(recipe?.ingredients).toHaveLength(1);
+    expect(recipe?.ingredients[0].ingredientId).toBe(ingredient?.id);
+  });
+
+  it("keeps component ingredients out of the recipe ingredient list and resolves them separately", async () => {
+    const suffix = Date.now();
+    const ingredientName = `Azúcar componente ${suffix}`;
+    const title = `Receta componente ${suffix}`;
+    const ingredient = await prisma.ingredient.create({
+      data: {
+        name: ingredientName,
+        unit: "g",
+        status: "GLOBAL",
+        variants: {
+          create: [{ name: "Crudo", isDefault: true, weightFactor: 1 }],
+        },
+      },
+    });
+
+    await recipeService.importFromJson(
+      [
+        {
+          title,
+          servings: 2,
+          ingredients: [{ name: ingredientName, quantity: 70, unit: "g" }],
+          components: [
+            {
+              name: "Cobertura",
+              options: [
+                {
+                  name: "Con azúcar",
+                  ingredientName,
+                  quantity: 10,
+                  unit: "g",
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      user.id,
+    );
+
+    const recipe = await prisma.recipe.findFirst({
+      where: { title, userId: user.id },
+      include: {
+        ingredients: true,
+        components: { include: { options: true } },
+      },
+    });
+
+    expect(recipe?.ingredients).toHaveLength(1);
+    expect(recipe?.ingredients[0].ingredientId).toBe(ingredient.id);
+    expect(recipe?.components[0].options[0].ingredientId).toBe(ingredient.id);
+  });
 });

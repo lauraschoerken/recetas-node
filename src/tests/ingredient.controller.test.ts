@@ -36,6 +36,80 @@ describe("Ingredient Controller", () => {
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body.data)).toBe(true);
     });
+
+    it("exposes a private ingredient when it is used by a public recipe", async () => {
+      const owner = await createTestUser("public_recipe_ingredient_owner");
+      const uniqueName = `Public recipe ingredient ${Date.now()}`;
+
+      try {
+        const ingredientRes = await request(app)
+          .post("/api/ingredients")
+          .set("Authorization", `Bearer ${owner.token}`)
+          .send({ name: uniqueName, unit: "g" });
+
+        expect(ingredientRes.status).toBe(201);
+        expect(ingredientRes.body.status).toBe("PRIVATE");
+
+        const recipeRes = await request(app)
+          .post("/api/recipes")
+          .set("Authorization", `Bearer ${owner.token}`)
+          .send({
+            title: `Public ingredient recipe ${Date.now()}`,
+            isPublic: true,
+            ingredients: [
+              {
+                ingredientId: ingredientRes.body.id,
+                name: uniqueName,
+                quantity: 60,
+                unit: "g",
+              },
+            ],
+          });
+
+        expect(recipeRes.status).toBe(201);
+
+        const publishedIngredientRes = await request(app)
+          .get(`/api/ingredients/${ingredientRes.body.id}`)
+          .set("Authorization", `Bearer ${testUser.token}`);
+
+        expect(publishedIngredientRes.status).toBe(200);
+        expect(publishedIngredientRes.body.status).toBe("GLOBAL");
+        expect(publishedIngredientRes.body.createdByUserId).toBeNull();
+
+        const ownerDeleteRes = await request(app)
+          .delete(`/api/ingredients/${ingredientRes.body.id}`)
+          .set("Authorization", `Bearer ${owner.token}`);
+
+        expect(ownerDeleteRes.status).toBe(403);
+
+        const makeRecipePrivateRes = await request(app)
+          .put(`/api/recipes/${recipeRes.body.id}`)
+          .set("Authorization", `Bearer ${owner.token}`)
+          .send({ isPublic: false });
+
+        expect(makeRecipePrivateRes.status).toBe(200);
+
+        const stillPublicIngredientRes = await request(app)
+          .get(`/api/ingredients/${ingredientRes.body.id}`)
+          .set("Authorization", `Bearer ${owner.token}`);
+
+        expect(stillPublicIngredientRes.body.status).toBe("GLOBAL");
+        expect(stillPublicIngredientRes.body.createdByUserId).toBeNull();
+
+        const listRes = await request(app)
+          .get(`/api/ingredients?search=${encodeURIComponent(uniqueName)}`)
+          .set("Authorization", `Bearer ${testUser.token}`);
+
+        expect(listRes.status).toBe(200);
+        expect(listRes.body.data).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ id: ingredientRes.body.id }),
+          ]),
+        );
+      } finally {
+        await cleanupTestUser(owner.id);
+      }
+    });
   });
 
   describe("POST /api/ingredients", () => {

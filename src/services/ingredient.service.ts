@@ -15,6 +15,7 @@ const prisma = new PrismaClient();
 const ingredientInclude = {
   conversions: true,
   variants: true,
+  createdBy: { select: { id: true, name: true } },
 };
 
 export interface DailyNutrition {
@@ -26,6 +27,39 @@ export interface DailyNutrition {
 }
 
 export class IngredientService {
+  /**
+   * An ingredient is visible when it is global, belongs to the current user,
+   * or is exposed through a public recipe. Publishing a recipe therefore also
+   * makes every ingredient needed to prepare it discoverable.
+   */
+  private visibilityFilter(userId?: number): Prisma.IngredientWhereInput {
+    const publicRecipeUsage: Prisma.IngredientWhereInput[] = [
+      { recipes: { some: { recipe: { isPublic: true } } } },
+      {
+        componentOptions: {
+          some: { component: { recipe: { isPublic: true } } },
+        },
+      },
+    ];
+
+    return userId
+      ? {
+          OR: [
+            { status: "GLOBAL" },
+            { createdByUserId: userId },
+            ...publicRecipeUsage,
+          ],
+        }
+      : { OR: [{ status: "GLOBAL" }, ...publicRecipeUsage] };
+  }
+
+  private async touchIngredient(ingredientId: number): Promise<void> {
+    await prisma.ingredient.update({
+      where: { id: ingredientId },
+      data: { updatedAt: new Date() },
+    });
+  }
+
   // ── Helper: aplicar overrides personales al array de ingredientes ──
   private async applyUserOverrides(
     data: Ingredient[],
@@ -102,6 +136,7 @@ export class IngredientService {
       userId?: number;
       sortBy?: string;
       sortOrder?: "asc" | "desc";
+      authorId?: number;
       location?: string;
       statusFilter?: string; // 'GLOBAL' | 'PRIVATE' | 'PENDING'
       hasNutrition?: boolean;
@@ -123,6 +158,7 @@ export class IngredientService {
       userId,
       sortBy = "name",
       sortOrder = "asc",
+      authorId,
       location,
       statusFilter: statusParam,
       hasNutrition,
@@ -146,9 +182,7 @@ export class IngredientService {
     } else if (statusParam === "PENDING" && userId) {
       visibilityFilter = { createdByUserId: userId, status: "PENDING" };
     } else {
-      visibilityFilter = userId
-        ? { OR: [{ status: "GLOBAL" }, { createdByUserId: userId }] }
-        : { status: "GLOBAL" };
+      visibilityFilter = this.visibilityFilter(userId);
     }
 
     // Búsqueda insensible a tildes usando unaccent (extensión PostgreSQL)
@@ -212,7 +246,10 @@ export class IngredientService {
     }
 
     const where: Record<string, unknown> = {
-      ...visibilityFilter,
+      AND: [
+        visibilityFilter,
+        ...(authorId != null ? [{ createdByUserId: authorId }] : []),
+      ],
       ...searchFilter,
       ...locationFilter,
       ...(macroFiltersActive ? { variants: { some: variantWhere } } : {}),
@@ -265,10 +302,12 @@ export class IngredientService {
           ? sorted.slice((page - 1) * pageSize, page * pageSize)
           : sorted;
     } else {
+      const allowedSortFields = ["name", "createdAt", "updatedAt"];
+      const safeSortBy = allowedSortFields.includes(sortBy) ? sortBy : "name";
       const [raw, count] = await prisma.$transaction([
         prisma.ingredient.findMany({
           where,
-          orderBy: { name: sortOrder === "desc" ? "desc" : "asc" },
+          orderBy: { [safeSortBy]: sortOrder === "desc" ? "desc" : "asc" },
           include: ingredientInclude,
           ...(page && pageSize
             ? { skip: (page - 1) * pageSize, take: pageSize }
@@ -287,30 +326,31 @@ export class IngredientService {
     return { data, total };
   }
 
+  async getAuthors(userId: number): Promise<{ id: number; name: string }[]> {
+    return prisma.user.findMany({
+      where: {
+        createdIngredients: {
+          some: this.visibilityFilter(userId),
+        },
+      },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    });
+  }
+
   async search(query: string, userId?: number): Promise<Ingredient[]> {
     const pattern = `%${query}%`;
     // Búsqueda insensible a tildes usando unaccent (extensión PostgreSQL)
-    let rows: { id: number }[];
-    if (userId) {
-      rows = await prisma.$queryRaw<{ id: number }[]>(
-        Prisma.sql`SELECT id FROM "Ingredient"
-          WHERE unaccent(lower(name)) LIKE unaccent(lower(${pattern}))
-            AND (status = 'GLOBAL' OR "createdByUserId" = ${userId})
-          ORDER BY name ASC LIMIT 10`
-      );
-    } else {
-      rows = await prisma.$queryRaw<{ id: number }[]>(
-        Prisma.sql`SELECT id FROM "Ingredient"
-          WHERE unaccent(lower(name)) LIKE unaccent(lower(${pattern}))
-            AND status = 'GLOBAL'
-          ORDER BY name ASC LIMIT 10`
-      );
-    }
+    const rows = await prisma.$queryRaw<{ id: number }[]>(
+      Prisma.sql`SELECT id FROM "Ingredient"
+        WHERE unaccent(lower(name)) LIKE unaccent(lower(${pattern}))`,
+    );
     const ids = rows.map((r) => r.id);
     if (ids.length === 0) return [];
     const results = await prisma.ingredient.findMany({
-      where: { id: { in: ids } },
+      where: { AND: [{ id: { in: ids } }, this.visibilityFilter(userId)] },
       orderBy: { name: "asc" },
+      take: 10,
       include: ingredientInclude,
     });
     if (userId && results.length > 0) {
@@ -598,9 +638,27 @@ export class IngredientService {
     });
   }
 
-  async delete(id: number): Promise<boolean> {
+  async delete(
+    id: number,
+    userId?: number,
+    userRole?: string,
+  ): Promise<boolean> {
     const ingredient = await prisma.ingredient.findUnique({ where: { id } });
     if (!ingredient) return false;
+
+    const isAdmin = userRole === "ADMIN";
+    if (!isAdmin && ingredient.status === "GLOBAL") {
+      throw {
+        httpCode: 403,
+        message: "Los ingredientes públicos solo pueden ser eliminados por un administrador",
+      };
+    }
+    if (!isAdmin && ingredient.createdByUserId !== userId) {
+      throw {
+        httpCode: 403,
+        message: "Solo puedes eliminar tus propios ingredientes privados",
+      };
+    }
 
     await prisma.ingredient.delete({ where: { id } });
     return true;
@@ -687,7 +745,7 @@ export class IngredientService {
       });
     }
 
-    return prisma.ingredientVariant.create({
+    const created = await prisma.ingredientVariant.create({
       data: {
         name: data.name,
         isDefault: data.isDefault ?? false,
@@ -700,6 +758,8 @@ export class IngredientService {
         ingredientId,
       },
     });
+    await this.touchIngredient(ingredientId);
+    return created;
   }
 
   async updateVariant(
@@ -719,7 +779,7 @@ export class IngredientService {
       });
     }
 
-    return prisma.ingredientVariant.update({
+    const updated = await prisma.ingredientVariant.update({
       where: { id: variantId },
       data: {
         name: data.name,
@@ -732,6 +792,8 @@ export class IngredientService {
         weightFactor: data.weightFactor,
       },
     });
+    await this.touchIngredient(variant.ingredientId);
+    return updated;
   }
 
   async deleteVariant(variantId: number): Promise<boolean> {
@@ -760,6 +822,8 @@ export class IngredientService {
         });
       }
     }
+
+    await this.touchIngredient(variant.ingredientId);
 
     return true;
   }
@@ -820,19 +884,23 @@ export class IngredientService {
     });
 
     if (existing) {
-      return prisma.unitConversion.update({
+      const updated = await prisma.unitConversion.update({
         where: { id: existing.id },
         data: { gramsPerUnit: data.gramsPerUnit },
       });
+      await this.touchIngredient(ingredientId);
+      return updated;
     }
 
-    return prisma.unitConversion.create({
+    const created = await prisma.unitConversion.create({
       data: {
         unitName: data.unitName.toLowerCase(),
         gramsPerUnit: data.gramsPerUnit,
         ingredientId,
       },
     });
+    await this.touchIngredient(ingredientId);
+    return created;
   }
 
   async deleteConversionOverride(
@@ -858,10 +926,12 @@ export class IngredientService {
     });
     if (!conversion) return null;
 
-    return prisma.unitConversion.update({
+    const updated = await prisma.unitConversion.update({
       where: { id: conversionId },
       data: { gramsPerUnit },
     });
+    await this.touchIngredient(conversion.ingredientId);
+    return updated;
   }
 
   async deleteConversion(conversionId: number): Promise<boolean> {
@@ -901,6 +971,7 @@ export class IngredientService {
     }
 
     await prisma.unitConversion.delete({ where: { id: conversionId } });
+    await this.touchIngredient(conversion.ingredientId);
     return true;
   }
 

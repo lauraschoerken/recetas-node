@@ -79,6 +79,23 @@ const recipeInclude = {
 };
 
 export class RecipeService {
+  private async publishRecipeIngredients(recipeId: number): Promise<void> {
+    await prisma.ingredient.updateMany({
+      where: {
+        status: { not: "GLOBAL" },
+        OR: [
+          { recipes: { some: { recipeId } } },
+          {
+            componentOptions: {
+              some: { component: { recipeId } },
+            },
+          },
+        ],
+      },
+      data: { status: "GLOBAL", createdByUserId: null },
+    });
+  }
+
   async getAll(
     userId: number,
     opts: {
@@ -95,6 +112,7 @@ export class RecipeService {
       sortBy?: string;
       sortOrder?: string;
       authorId?: number;
+      userRole?: string;
     } = {},
   ): Promise<{ data: RecipeWithComponents[]; total: number }> {
     const {
@@ -111,23 +129,30 @@ export class RecipeService {
       sortBy = "createdAt",
       sortOrder = "desc",
       authorId,
+      userRole,
     } = opts;
 
     // Filtro de visibilidad
     let visibilityFilter: object;
+    const isAdmin = userRole === "ADMIN";
     if (visibility === "public") {
       visibilityFilter = { isPublic: true };
     } else if (visibility === "mine") {
       visibilityFilter = { userId };
     } else if (visibility === "private") {
-      visibilityFilter = { userId, isPublic: false };
+      visibilityFilter = isAdmin
+        ? { isPublic: false }
+        : { userId, isPublic: false };
     } else {
-      visibilityFilter = { OR: [{ userId }, { isPublic: true }] };
+      visibilityFilter = isAdmin
+        ? {}
+        : { OR: [{ userId }, { isPublic: true }] };
     }
 
     // Ordenación
     const allowedSortFields = [
       "createdAt",
+      "updatedAt",
       "title",
       "cookTimeMinutes",
       "difficulty",
@@ -160,6 +185,7 @@ export class RecipeService {
     const where = {
       AND: [
         visibilityFilter,
+        { NOT: { hiddenByUsers: { some: { userId } } } },
         ...(searchIds !== null ? [{ id: { in: searchIds } }] : []),
         ...(ingredientIds !== null
           ? ingredientIds.length > 0
@@ -270,11 +296,21 @@ export class RecipeService {
     };
   }
 
-  async getAuthors(userId: number): Promise<{ id: number; name: string }[]> {
+  async getAuthors(
+    userId: number,
+    userRole?: string,
+  ): Promise<{ id: number; name: string }[]> {
+    const visibilityFilter =
+      userRole === "ADMIN" ? {} : { OR: [{ userId }, { isPublic: true }] };
     const users = await prisma.user.findMany({
       where: {
         recipes: {
-          some: { OR: [{ userId }, { isPublic: true }] },
+          some: {
+            AND: [
+              visibilityFilter,
+              { NOT: { hiddenByUsers: { some: { userId } } } },
+            ],
+          },
         },
       },
       select: { id: true, name: true },
@@ -283,14 +319,59 @@ export class RecipeService {
     return users;
   }
 
+  async hide(id: number, userId: number): Promise<void> {
+    const recipe = await prisma.recipe.findFirst({
+      where: { id, isPublic: true, userId: { not: userId } },
+      select: { id: true },
+    });
+
+    if (!recipe) {
+      throw {
+        httpCode: 404,
+        message: "Solo puedes ocultar recetas públicas de otros usuarios",
+      };
+    }
+
+    await prisma.recipeUserHide.upsert({
+      where: { userId_recipeId: { userId, recipeId: id } },
+      create: { userId, recipeId: id },
+      update: {},
+    });
+  }
+
+  async unhide(id: number, userId: number): Promise<void> {
+    await prisma.recipeUserHide.deleteMany({
+      where: { userId, recipeId: id },
+    });
+  }
+
+  async getHidden(userId: number): Promise<RecipeWithComponents[]> {
+    const rows = await prisma.recipeUserHide.findMany({
+      where: {
+        userId,
+        recipe: { isPublic: true, userId: { not: userId } },
+      },
+      include: { recipe: { include: recipeInclude } },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const mapped = rows.map((row) =>
+      this.mapRecipe(row.recipe, row.recipe.user.name),
+    );
+    return this.applyUserConversionOverridesToRecipes(mapped, userId);
+  }
+
   async getById(
     id: number,
     userId: number,
+    userRole?: string,
   ): Promise<RecipeWithComponents | null> {
     const recipe = await prisma.recipe.findFirst({
       where: {
         id,
-        OR: [{ userId }, { isPublic: true }],
+        ...(userRole === "ADMIN"
+          ? {}
+          : { OR: [{ userId }, { isPublic: true }] }),
       },
       include: recipeInclude,
     });
@@ -508,6 +589,10 @@ export class RecipeService {
       }
     }
 
+    if (recipe.isPublic) {
+      await this.publishRecipeIngredients(recipe.id);
+    }
+
     // Paso 4: Recargar y devolver la receta completa
     const fullRecipe = await prisma.recipe.findUnique({
       where: { id: recipe.id },
@@ -524,9 +609,10 @@ export class RecipeService {
     id: number,
     data: UpdateRecipeDto,
     userId: number,
+    userRole?: string,
   ): Promise<RecipeWithComponents | null> {
     const existing = await prisma.recipe.findFirst({
-      where: { id, userId },
+      where: { id, ...(userRole === "ADMIN" ? {} : { userId }) },
     });
 
     if (!existing) return null;
@@ -691,6 +777,11 @@ export class RecipeService {
           }
         }
       }
+    }
+
+    const isPublicAfterUpdate = data.isPublic ?? existing.isPublic;
+    if (isPublicAfterUpdate) {
+      await this.publishRecipeIngredients(id);
     }
 
     // Recargar y devolver
@@ -1642,6 +1733,19 @@ export class RecipeService {
         : [{ name: "Crudo", isDefault: true, weightFactor: 1 }];
 
     if (!ingredient && options.createNew) {
+      // The review can become stale (or the same name can occur more than once
+      // in an import). Reuse an exact visible match instead of creating a
+      // second ingredient with the same name.
+      ingredient = await prisma.ingredient.findFirst({
+        where: {
+          name: { equals: name, mode: "insensitive" },
+          OR: [{ status: "GLOBAL" }, { createdByUserId: userId }],
+        },
+        include: { variants: true, conversions: true },
+      });
+    }
+
+    if (!ingredient && options.createNew) {
       ingredient = await prisma.ingredient.create({
         data: {
           name,
@@ -1850,7 +1954,6 @@ export class RecipeService {
           : []) {
           const ingredientName = this.normalizeIngredientName(
             option?.ingredientName ??
-              option?.name ??
               option?.ingredient?.name ??
               option?.ingredient?.ingredientName,
           );
@@ -1970,28 +2073,6 @@ export class RecipeService {
       entries.push({ recipeTitle, index, ingredientInput });
     }
 
-    for (const component of Array.isArray(recipe?.components)
-      ? recipe.components
-      : []) {
-      for (const option of Array.isArray(component?.options)
-        ? component.options
-        : []) {
-        const ingredientName = this.normalizeIngredientName(
-          option?.ingredientName ??
-            option?.name ??
-            option?.ingredient?.name ??
-            option?.ingredient?.ingredientName,
-        );
-        if (ingredientName) {
-          entries.push({
-            recipeTitle,
-            index: entries.length,
-            ingredientInput: option,
-          });
-        }
-      }
-    }
-
     return entries;
   }
 
@@ -2085,17 +2166,23 @@ export class RecipeService {
 
         if (
           ingredientById &&
-          this.normalizeIngredientName(ingredientById.name) !== importedName
+          this.normalizeImportResolutionKey(ingredientById.name) !==
+            this.normalizeImportResolutionKey(importedName)
         ) {
           const candidates = await prisma.ingredient.findMany({
             where: {
-              OR: [
-                { name: { contains: importedName, mode: "insensitive" } },
+              AND: [
+                { OR: [{ status: "GLOBAL" }, { createdByUserId: userId }] },
                 {
-                  name: {
-                    contains: this.normalizeIngredientName(ingredientById.name),
-                    mode: "insensitive",
-                  },
+                  OR: [
+                    { name: { contains: importedName, mode: "insensitive" } },
+                    {
+                      name: {
+                        contains: this.normalizeIngredientName(ingredientById.name),
+                        mode: "insensitive",
+                      },
+                    },
+                  ],
                 },
               ],
             },
@@ -2156,7 +2243,9 @@ export class RecipeService {
           });
 
           const safeCandidate = candidates.find(
-            (c) => this.normalizeIngredientName(c.name) === importedName,
+            (c) =>
+              this.normalizeImportResolutionKey(c.name) ===
+              this.normalizeImportResolutionKey(importedName),
           );
 
           if (!safeCandidate || matchingPrivateIngredient) {
@@ -2277,8 +2366,11 @@ export class RecipeService {
             preferredName: resolution?.name ?? importedIngredientName,
           },
         );
-        dtoIngredients.push({
-          ingredientId: resolution?.ingredientId ?? undefined,
+        const dtoIngredient = {
+          // Always carry the ID returned by the resolver. This is especially
+          // important for "create new", whose resolution did not have an ID
+          // before ensureIngredientImportData ran.
+          ingredientId: resolved.ingredientId,
           name: this.normalizeIngredientName(
             resolution?.name ??
               ingredientInput?.ingredientName ??
@@ -2298,9 +2390,29 @@ export class RecipeService {
             ingredientInput?.cookedVariantName ??
             ingredientInput?.cookedVariant?.name ??
             undefined,
-        });
+        };
+
+        const duplicate = dtoIngredients.find(
+          (item) => item.ingredientId === resolved.ingredientId,
+        );
+        if (duplicate) {
+          if (
+            String(duplicate.unit).trim().toLowerCase() !==
+            String(dtoIngredient.unit).trim().toLowerCase()
+          ) {
+            throw new Error(
+              `El ingrediente "${dtoIngredient.name}" aparece más de una vez con unidades distintas. Unifica las unidades antes de importar.`,
+            );
+          }
+          duplicate.quantity += dtoIngredient.quantity;
+        } else {
+          dtoIngredients.push(dtoIngredient);
+        }
       }
 
+      let componentIngredientIndex = Array.isArray(recipe.ingredients)
+        ? recipe.ingredients.length
+        : 0;
       const dtoComponents = (recipe.components || []).map((c: any) => ({
         name: c.name,
         sortOrder: c.sortOrder ?? 0,
@@ -2310,16 +2422,39 @@ export class RecipeService {
           const ingredientName =
             o?.ingredientName ??
             o?.ingredient?.name ??
-            o?.ingredientName ??
             undefined;
+          const ingredientIndex = ingredientName
+            ? componentIngredientIndex++
+            : -1;
+          const resolution = ingredientName
+            ? this.findIngredientResolution(
+                ingredientResolutions,
+                title,
+                ingredientIndex,
+                ingredientName,
+                Number(o?.id ?? o?.ingredientId ?? o?.ingredient?.id ?? 0) ||
+                  null,
+              )
+            : undefined;
           const resolved = ingredientName
             ? await this.ensureIngredientImportData(
                 {
                   ...o,
-                  ingredientName,
+                  ingredientName: resolution?.name ?? ingredientName,
+                  ...(resolution?.ingredientId
+                    ? {
+                        id: resolution.ingredientId,
+                        ingredientId: resolution.ingredientId,
+                      }
+                    : {}),
                   unit: o.unit ?? o.ingredient?.unit ?? "g",
                 },
                 userId,
+                {
+                  ingredientId: resolution?.ingredientId ?? null,
+                  createNew: Boolean(resolution?.createNew),
+                  preferredName: resolution?.name ?? ingredientName,
+                },
               )
             : null;
 
@@ -2327,7 +2462,7 @@ export class RecipeService {
             name: o.name,
             isDefault: Boolean(o.isDefault),
             recipeId: o.recipeId ?? undefined,
-            ingredientName,
+            ingredientName: resolution?.name ?? ingredientName,
             quantity: o.quantity ?? undefined,
             unit: o.unit ?? undefined,
             recipeServings: o.recipeServings ?? undefined,
@@ -2372,8 +2507,24 @@ export class RecipeService {
           : {}),
       } as any;
 
-      await this.create(dto, userId);
-      importedCount += 1;
+      try {
+        await this.create(dto, userId);
+        importedCount += 1;
+      } catch (error) {
+        // create() builds the recipe and its relations in several steps. If a
+        // later relation fails, never leave a half-imported recipe behind.
+        const partialRecipe = await prisma.recipe.findFirst({
+          where: {
+            userId,
+            title: { equals: title, mode: "insensitive" },
+          },
+          select: { id: true },
+        });
+        if (partialRecipe) {
+          await prisma.recipe.delete({ where: { id: partialRecipe.id } });
+        }
+        throw error;
+      }
     }
 
     return { importedCount, skipped };

@@ -15,7 +15,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "seed:ingredients": "ts-node prisma/seeds/run-ingredients.ts"
+    "seed:ingredients": "ts-node prisma/seeds/run-ingredients.ts",
+    "publish:public-recipe-ingredients": "ts-node prisma/scripts/publish-public-recipe-ingredients.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.10.0",
