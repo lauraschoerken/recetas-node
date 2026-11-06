@@ -27,6 +27,113 @@ export interface DailyNutrition {
 }
 
 export class IngredientService {
+  private normalizeImportText(value: unknown): string {
+    return String(value ?? "")
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+  }
+
+  private normalizeIngredientImportRows(input: any): any[] {
+    return Array.isArray(input)
+      ? input
+      : Array.isArray(input?.ingredients)
+        ? input.ingredients
+        : input && typeof input === "object" && input.name
+          ? [input]
+          : [];
+  }
+
+  private importTagRows(input: any): Array<{ name: string; color?: string }> {
+    return (Array.isArray(input?.tags) ? input.tags : [])
+      .map((tag: any) =>
+        typeof tag === "string"
+          ? { name: tag.trim() }
+          : {
+              name: String(tag?.name ?? "").trim(),
+              color: tag?.color ? String(tag.color) : undefined,
+            },
+      )
+      .filter((tag: { name: string }) => Boolean(tag.name));
+  }
+
+  private importDistance(a: string, b: string): number {
+    const rows = Array.from({ length: a.length + 1 }, (_, i) => i);
+    for (let j = 1; j <= b.length; j += 1) {
+      let previous = rows[0];
+      rows[0] = j;
+      for (let i = 1; i <= a.length; i += 1) {
+        const saved = rows[i];
+        rows[i] = Math.min(
+          rows[i] + 1,
+          rows[i - 1] + 1,
+          previous + (a[i - 1] === b[j - 1] ? 0 : 1),
+        );
+        previous = saved;
+      }
+    }
+    return rows[a.length];
+  }
+
+  async reviewImportJson(input: any, userId: number) {
+    const rows = this.normalizeIngredientImportRows(input);
+    if (rows.length === 0) {
+      throw {
+        httpCode: 400,
+        message: "El JSON no contiene ningún ingrediente válido",
+      };
+    }
+    const tags = await prisma.ingredientTag.findMany({
+      where: { OR: [{ isGlobal: true }, { createdByUserId: userId }] },
+      select: { id: true, name: true, color: true },
+    });
+    const conflicts: Array<{
+      key: string;
+      importedName: string;
+      color?: string;
+      candidates: Array<{ id: number; name: string; color: string | null }>;
+    }> = [];
+    const seen = new Set<string>();
+    for (const row of rows) {
+      for (const imported of this.importTagRows(row)) {
+        const normalized = this.normalizeImportText(imported.name);
+        if (!normalized || seen.has(normalized)) continue;
+        seen.add(normalized);
+        if (
+          tags.some(
+            (tag) => this.normalizeImportText(tag.name) === normalized,
+          )
+        )
+          continue;
+        const candidates = tags
+          .map((tag) => ({
+            ...tag,
+            score: this.importDistance(
+              normalized,
+              this.normalizeImportText(tag.name),
+            ),
+          }))
+          .filter(
+            (tag) =>
+              tag.score <= Math.max(3, Math.floor(normalized.length / 2)) ||
+              this.normalizeImportText(tag.name).includes(normalized) ||
+              normalized.includes(this.normalizeImportText(tag.name)),
+          )
+          .sort((a, b) => a.score - b.score || a.name.localeCompare(b.name))
+          .slice(0, 8)
+          .map(({ id, name, color }) => ({ id, name, color }));
+        conflicts.push({
+          key: `tag:${normalized}`,
+          importedName: imported.name,
+          color: imported.color,
+          candidates,
+        });
+      }
+    }
+    return { needsReview: conflicts.length > 0, conflicts };
+  }
+
   /**
    * An ingredient is visible when it is global, belongs to the current user,
    * or is exposed through a public recipe. Publishing a recipe therefore also
@@ -426,6 +533,7 @@ export class IngredientService {
           carbs: variant.carbs,
           fat: variant.fat,
           fiber: variant.fiber,
+          weightFactor: variant.weightFactor ?? 1,
           ingredientId: ingredient.id,
         },
       });
@@ -435,6 +543,260 @@ export class IngredientService {
       where: { id: ingredient.id },
       include: ingredientInclude,
     }) as Promise<Ingredient>;
+  }
+
+  async importFromJson(
+    input: any,
+    userId: number,
+    userRole?: string,
+    tagResolutions: Record<
+      string,
+      { tagId?: number; name?: string; color?: string; createNew?: boolean }
+    > = {},
+  ): Promise<{ importedCount: number; skipped: string[] }> {
+    const rows = this.normalizeIngredientImportRows(input);
+
+    if (rows.length === 0) {
+      throw {
+        httpCode: 400,
+        message: "El JSON no contiene ningún ingrediente válido",
+      };
+    }
+
+    let importedCount = 0;
+    const skipped: string[] = [];
+    for (const row of rows) {
+      const name = String(row?.name ?? "").trim();
+      if (!name) {
+        throw {
+          httpCode: 400,
+          message: "Todos los ingredientes necesitan nombre",
+        };
+      }
+      const imageUrl = String(row?.imageUrl ?? "").trim();
+      if (!/^https:\/\//i.test(imageUrl)) {
+        throw {
+          httpCode: 400,
+          message: `El ingrediente "${name}" necesita imageUrl con una imagen HTTPS pública y directa`,
+        };
+      }
+
+      const existing = await prisma.ingredient.findFirst({
+        where: {
+          name: { equals: name, mode: "insensitive" },
+          OR: [{ status: "GLOBAL" }, { createdByUserId: userId }],
+        },
+        select: { id: true },
+      });
+      if (existing) {
+        skipped.push(name);
+        continue;
+      }
+
+      const unit = row?.unit ?? row?.ingredientBaseUnit;
+      const rawVariants = Array.isArray(row?.variants)
+        ? row.variants.filter((variant: any) => variant?.name)
+        : [];
+      const requestedDefault = rawVariants.findIndex(
+        (variant: any) => variant?.isDefault === true,
+      );
+      const normalizedVariants = rawVariants.map(
+        (variant: any, index: number) => ({
+          ...variant,
+          isDefault: index === (requestedDefault >= 0 ? requestedDefault : 0),
+        }),
+      );
+
+      const ingredient = await this.create(
+        {
+          name,
+          unit: unit === "ml" ? "ml" : "g",
+          imageUrl,
+          defaultLocation: row?.defaultLocation ?? null,
+          variants:
+            normalizedVariants.length > 0 ? normalizedVariants : undefined,
+        },
+        userId,
+        userRole,
+      );
+
+      const preferredUnit = String(row?.preferredUnit ?? "").trim();
+      if (preferredUnit) {
+        await prisma.ingredient.update({
+          where: { id: ingredient.id },
+          data: { preferredUnit },
+        });
+      }
+
+      for (const conversion of Array.isArray(row?.conversions)
+        ? row.conversions
+        : []) {
+        const unitName = String(conversion?.unitName ?? "").trim();
+        const gramsPerUnit = Number(conversion?.gramsPerUnit);
+        if (!unitName || !Number.isFinite(gramsPerUnit) || gramsPerUnit <= 0)
+          continue;
+        await this.addConversion(
+          ingredient.id,
+          { unitName, gramsPerUnit },
+          userId,
+          userRole,
+        );
+      }
+
+      const minimumAlert = row?.minimumAlert ?? row?.minThreshold ?? null;
+      const minQuantity = Number(
+        minimumAlert?.minQuantity ?? minimumAlert?.quantity,
+      );
+      const minUnit = String(minimumAlert?.unit ?? unit ?? "g").trim();
+      if (Number.isFinite(minQuantity) && minQuantity > 0 && minUnit) {
+        await prisma.ingredientMinThreshold.upsert({
+          where: {
+            ingredientId_userId: { ingredientId: ingredient.id, userId },
+          },
+          create: {
+            ingredientId: ingredient.id,
+            userId,
+            minQuantity,
+            unit: minUnit,
+          },
+          update: { minQuantity, unit: minUnit },
+        });
+      }
+
+      const visibleTags = await prisma.ingredientTag.findMany({
+        where: { OR: [{ isGlobal: true }, { createdByUserId: userId }] },
+      });
+      for (const importedTag of this.importTagRows(row)) {
+        const normalized = this.normalizeImportText(importedTag.name);
+        const key = `tag:${normalized}`;
+        const resolution = tagResolutions[key];
+        let tag = resolution?.tagId
+          ? visibleTags.find((candidate) => candidate.id === resolution.tagId)
+          : visibleTags.find(
+              (candidate) =>
+                this.normalizeImportText(candidate.name) === normalized,
+            );
+        if (!tag && resolution?.createNew) {
+          const newName = String(
+            resolution.name ?? importedTag.name,
+          ).trim();
+          tag = visibleTags.find(
+            (candidate) =>
+              this.normalizeImportText(candidate.name) ===
+              this.normalizeImportText(newName),
+          );
+          if (!tag) {
+            tag = await prisma.ingredientTag.create({
+              data: {
+                name: newName,
+                color: resolution.color ?? importedTag.color ?? null,
+                isGlobal: false,
+                createdByUserId: userId,
+              },
+            });
+            visibleTags.push(tag);
+          }
+        }
+        if (!tag) {
+          throw {
+            httpCode: 400,
+            message: `Debes revisar el tag "${importedTag.name}" antes de importar`,
+          };
+        }
+        const assignmentUserId =
+          tag.isGlobal && userRole === "ADMIN" ? null : userId;
+        const existingAssignment = await prisma.ingredientTagAssignment.findFirst(
+          {
+            where: {
+              ingredientId: ingredient.id,
+              tagId: tag.id,
+              userId: assignmentUserId,
+            },
+          },
+        );
+        if (!existingAssignment) {
+          await prisma.ingredientTagAssignment.create({
+            data: {
+              ingredientId: ingredient.id,
+              tagId: tag.id,
+              userId: assignmentUserId,
+            },
+          });
+        }
+      }
+
+      const household = await prisma.householdMember.findFirst({
+        where: { userId },
+        select: { householdId: true },
+      });
+      const visibleStores = await prisma.userStore.findMany({
+        where: {
+          OR: [
+            { userId },
+            ...(household
+              ? [{ householdId: household.householdId, isShared: true }]
+              : []),
+          ],
+        },
+      });
+      for (const [index, storeInput] of (Array.isArray(row?.stores)
+        ? row.stores
+        : []).entries()) {
+        const storeName = String(
+          typeof storeInput === "string" ? storeInput : storeInput?.name,
+        ).trim();
+        if (!storeName) continue;
+        const store = visibleStores.find(
+          (candidate) =>
+            this.normalizeImportText(candidate.name) ===
+            this.normalizeImportText(storeName),
+        );
+        if (!store) {
+          throw {
+            httpCode: 400,
+            message: `No existe la tienda "${storeName}" en tu configuración`,
+          };
+        }
+        const storeDetails =
+          typeof storeInput === "string" ? {} : storeInput;
+        await prisma.userStoreIngredient.upsert({
+          where: {
+            storeId_ingredientId_userId: {
+              storeId: store.id,
+              ingredientId: ingredient.id,
+              userId,
+            },
+          },
+          create: {
+            storeId: store.id,
+            ingredientId: ingredient.id,
+            userId,
+            purchaseUrl: storeDetails?.purchaseUrl ?? null,
+            preferredUnit: storeDetails?.preferredUnit ?? null,
+            sortOrder: row?.storeOrderIndifferent
+              ? null
+              : (storeDetails?.sortOrder ?? index + 1),
+          },
+          update: {
+            purchaseUrl: storeDetails?.purchaseUrl ?? null,
+            preferredUnit: storeDetails?.preferredUnit ?? null,
+            sortOrder: row?.storeOrderIndifferent
+              ? null
+              : (storeDetails?.sortOrder ?? index + 1),
+          },
+        });
+      }
+
+      if (row?.proposeToAdmin === true && userRole !== "ADMIN") {
+        await prisma.ingredient.update({
+          where: { id: ingredient.id },
+          data: { status: "PENDING" },
+        });
+      }
+      importedCount += 1;
+    }
+
+    return { importedCount, skipped };
   }
 
   async createBulk(ingredients: CreateIngredientDto[]): Promise<Ingredient[]> {

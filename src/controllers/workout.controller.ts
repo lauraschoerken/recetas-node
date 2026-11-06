@@ -20,6 +20,16 @@ export class WorkoutController {
     return workoutService.importJson(req.userId!, body);
   }
 
+  @Post('/garmin/preview')
+  previewGarmin(@Body() body: { url?: string }) {
+    return workoutService.previewGarmin(body.url || '');
+  }
+
+  @Post('/garmin/import')
+  importGarmin(@Req() req: AuthRequest, @Body() body: { url?: string; addCaloriesToGoal?: boolean }) {
+    return workoutService.importGarmin(req.userId!, body.url || '', body.addCaloriesToGoal === true);
+  }
+
   @Put('/:id')
   update(@Req() req: AuthRequest, @Param('id') id: number, @Body() body: WorkoutInput) {
     return workoutService.update(req.userId!, id, body);

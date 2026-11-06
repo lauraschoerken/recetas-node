@@ -102,6 +102,58 @@ export class ProductService {
     return product;
   }
 
+  async importFromJson(
+    input: any,
+    userId: number,
+  ): Promise<{ importedCount: number; skipped: string[] }> {
+    const rows = Array.isArray(input)
+      ? input
+      : Array.isArray(input?.products)
+        ? input.products
+        : input && typeof input === "object" && input.name
+          ? [input]
+          : [];
+    if (rows.length === 0) {
+      throw {
+        httpCode: 400,
+        message: "El JSON no contiene ningún producto válido",
+      };
+    }
+
+    let importedCount = 0;
+    const skipped: string[] = [];
+    for (const row of rows) {
+      const name = String(row?.name ?? "").trim();
+      if (!name) {
+        throw {
+          httpCode: 400,
+          message: "Todos los productos necesitan nombre",
+        };
+      }
+      const imageUrl = String(row?.imageUrl ?? "").trim();
+      if (!/^https:\/\//i.test(imageUrl)) {
+        throw {
+          httpCode: 400,
+          message: `El producto "${name}" necesita imageUrl con una imagen HTTPS pública y directa`,
+        };
+      }
+      const existing = await prisma.product.findFirst({
+        where: {
+          name: { equals: name, mode: "insensitive" },
+          OR: [{ status: "GLOBAL" }, { createdByUserId: userId }],
+        },
+        select: { id: true },
+      });
+      if (existing) {
+        skipped.push(name);
+        continue;
+      }
+      await this.create(userId, { name, imageUrl });
+      importedCount += 1;
+    }
+    return { importedCount, skipped };
+  }
+
   async update(
     id: number,
     userId: number,

@@ -308,6 +308,35 @@ export class IngredientController {
     return ingredientService.createBulk(validIngredients);
   }
 
+  @Post("/import/json")
+  async importJson(
+    @Body()
+    body: {
+      ingredients?: any;
+      payload?: any;
+      tagResolutions?: Record<string, any>;
+    },
+    @Req() req: AuthRequest,
+  ) {
+    return ingredientService.importFromJson(
+      body?.payload ?? body?.ingredients,
+      req.userId!,
+      req.userRole,
+      body.tagResolutions ?? {},
+    );
+  }
+
+  @Post("/import/json/review")
+  async reviewImportJson(
+    @Body() body: { ingredients?: any; payload?: any },
+    @Req() req: AuthRequest,
+  ) {
+    return ingredientService.reviewImportJson(
+      body?.payload ?? body?.ingredients,
+      req.userId!,
+    );
+  }
+
   /**
    * @swagger
    * /api/ingredients/{id}:

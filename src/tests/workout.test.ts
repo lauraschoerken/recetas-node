@@ -20,12 +20,16 @@ describe('Entrenamientos', () => {
         durationMinutes: 50,
         caloriesBurned: 420,
         averageHeartRate: 138,
+        activityType: 'running',
+        distanceMeters: 5000,
+        steps: 6200,
+        elevationGainMeters: 110,
         exercises: '2 series de sentadillas\nCorrer 2 km',
         addCaloriesToGoal: false,
       });
 
     expect(create.status).toBe(200);
-    expect(create.body).toMatchObject({ title: 'Fuerza y carrera', addCaloriesToGoal: false });
+    expect(create.body).toMatchObject({ title: 'Fuerza y carrera', addCaloriesToGoal: false, activityType: 'running', distanceMeters: 5000, steps: 6200, elevationGainMeters: 110 });
 
     const nutrition = await request(app)
       .get('/api/profile/weekly-nutrition?startDate=2026-10-19&endDate=2026-10-19')
@@ -65,7 +69,7 @@ describe('Entrenamientos', () => {
         }],
         entries: [
           { kind: 'template', date: '2026-10-19', templateTitle: 'Pierna y carrera', addCaloriesToGoal: true },
-          { kind: 'custom', date: '2026-10-20', title: 'Paseo', durationMinutes: 60, caloriesBurned: 240 },
+          { kind: 'custom', date: '2026-10-20', title: 'Paseo', durationMinutes: 60, caloriesBurned: 240, distanceMeters: 6100, steps: 7900, elevationGainMeters: 95, movingDurationSeconds: 3300 },
         ],
       });
 
@@ -73,6 +77,6 @@ describe('Entrenamientos', () => {
     expect(response.body).toMatchObject({ templatesImported: 1, importedCount: 2 });
     expect(response.body.entries[0]).toMatchObject({ title: 'Pierna y carrera', caloriesBurned: 430, addCaloriesToGoal: true });
     expect(response.body.entries[0].templateId).not.toBeNull();
-    expect(response.body.entries[1]).toMatchObject({ title: 'Paseo', templateId: null });
+    expect(response.body.entries[1]).toMatchObject({ title: 'Paseo', templateId: null, distanceMeters: 6100, steps: 7900, elevationGainMeters: 95, movingDurationSeconds: 3300 });
   });
 });

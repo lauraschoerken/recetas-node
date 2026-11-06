@@ -1806,6 +1806,37 @@ export class RecipeService {
         ? ingredientInput.ingredient.conversions
         : [];
 
+    // Import every declared state, not only the state selected by the recipe,
+    // so its complete nutritional definition is preserved.
+    for (const [index, variantInput] of explicitVariantRows.entries()) {
+      const variantName = this.normalizeIngredientName(variantInput?.name);
+      if (!variantName) continue;
+      await this.ensureIngredientVariantState(
+        ingredient.id,
+        variantName,
+        Number(variantInput?.weightFactor ?? 1) || 1,
+        variantInput?.calories ?? null,
+        variantInput?.protein ?? null,
+        variantInput?.carbs ?? null,
+        variantInput?.fat ?? null,
+        variantInput?.fiber ?? null,
+      );
+      if (
+        variantInput?.isDefault === true ||
+        (index === 0 &&
+          !explicitVariantRows.some((v: any) => v?.isDefault))
+      ) {
+        await prisma.ingredientVariant.updateMany({
+          where: { ingredientId: ingredient.id },
+          data: { isDefault: false },
+        });
+        await prisma.ingredientVariant.updateMany({
+          where: { ingredientId: ingredient.id, name: variantName },
+          data: { isDefault: true },
+        });
+      }
+    }
+
     for (const conversion of availableConversions) {
       if (!conversion || !conversion.unitName) continue;
       const unitName = String(conversion.unitName).trim();

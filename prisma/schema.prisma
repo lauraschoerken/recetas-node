@@ -83,12 +83,43 @@ model Workout {
   addCaloriesToGoal Boolean  @default(false)
   userId             Int
   templateId         Int?
+  source             String?
+  externalId         String?
+  sourceUrl          String?
+  activityType       String?
+  locationName       String?
+  distanceMeters     Float?
+  durationSeconds    Float?
+  movingDurationSeconds Float?
+  elapsedDurationSeconds Float?
+  averageSpeedMps    Float?
+  averageMovingSpeedMps Float?
+  maxSpeedMps        Float?
+  elevationGainMeters Float?
+  elevationLossMeters Float?
+  minElevationMeters Float?
+  maxElevationMeters Float?
+  averageElevationMeters Float?
+  maxHeartRate       Int?
+  minHeartRate       Int?
+  averageCadence     Float?
+  maxCadence         Float?
+  steps              Int?
+  restingCalories    Int?
+  activeCalories     Int?
+  estimatedSweatLossMl Int?
+  moderateIntensityMinutes Int?
+  vigorousIntensityMinutes Int?
+  intensityMinutes  Int?
+  maxVerticalSpeedMps Float?
+  lapCount           Int?
   user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   template           WorkoutTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
   @@index([userId, performedAt])
+  @@unique([userId, source, externalId])
 }
 
 model WorkoutTemplate {

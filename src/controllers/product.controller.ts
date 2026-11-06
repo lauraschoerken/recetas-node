@@ -161,6 +161,17 @@ export class ProductController {
     });
   }
 
+  @Post("/import/json")
+  async importJson(
+    @Body() body: { products?: any; payload?: any },
+    @Req() req: AuthRequest,
+  ) {
+    return productService.importFromJson(
+      body?.payload ?? body?.products,
+      req.userId!,
+    );
+  }
+
   /**
    * @swagger
    * /api/products/{id}:
