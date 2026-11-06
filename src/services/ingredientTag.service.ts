@@ -148,12 +148,27 @@ export class IngredientTagService {
     if (!tag) return null;
     // Si es tag global, solo admin puede asignar globalmente (userId = null)
     const assignUserId = tag.isGlobal && userRole === "ADMIN" ? null : userId;
+
+    // Prisma no permite usar null en una clave compuesta de findUnique/upsert.
+    // Las asignaciones globales usan precisamente userId = null, así que deben
+    // resolverse con findFirst antes de crear la fila.
+    if (assignUserId === null) {
+      const existing = await prisma.ingredientTagAssignment.findFirst({
+        where: { ingredientId, tagId, userId: null },
+      });
+      if (existing) return existing;
+
+      return prisma.ingredientTagAssignment.create({
+        data: { ingredientId, tagId, userId: null },
+      });
+    }
+
     return prisma.ingredientTagAssignment.upsert({
       where: {
         ingredientId_tagId_userId: {
           ingredientId,
           tagId,
-          userId: assignUserId as number,
+          userId: assignUserId,
         },
       },
       create: { ingredientId, tagId, userId: assignUserId },
@@ -171,15 +186,20 @@ export class IngredientTagService {
     const tag = await prisma.ingredientTag.findUnique({ where: { id: tagId } });
     if (!tag) return false;
     const assignUserId = tag.isGlobal && userRole === "ADMIN" ? null : userId;
-    const existing = await prisma.ingredientTagAssignment.findUnique({
-      where: {
-        ingredientId_tagId_userId: {
-          ingredientId,
-          tagId,
-          userId: assignUserId as number,
-        },
-      },
-    });
+    const existing =
+      assignUserId === null
+        ? await prisma.ingredientTagAssignment.findFirst({
+            where: { ingredientId, tagId, userId: null },
+          })
+        : await prisma.ingredientTagAssignment.findUnique({
+            where: {
+              ingredientId_tagId_userId: {
+                ingredientId,
+                tagId,
+                userId: assignUserId,
+              },
+            },
+          });
     if (!existing) return false;
     await prisma.ingredientTagAssignment.delete({
       where: { id: existing.id },

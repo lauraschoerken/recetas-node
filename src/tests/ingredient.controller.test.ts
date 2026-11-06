@@ -115,6 +115,7 @@ describe("Ingredient Controller", () => {
   describe("POST /api/ingredients", () => {
     it("should create a new ingredient", async () => {
       const timestamp = Date.now();
+      const requestedAt = new Date();
       const res = await request(app)
         .post("/api/ingredients")
         .set("Authorization", `Bearer ${testUser.token}`)
@@ -128,6 +129,13 @@ describe("Ingredient Controller", () => {
       expect(res.status).toBe(201);
       expect(res.body.name).toBe(`test ingredient ${timestamp}`);
       expect(res.body.unit).toBe("g");
+      expect(res.body.createdAt).toBeDefined();
+      expect(new Date(res.body.createdAt).getTime()).toBeGreaterThanOrEqual(
+        requestedAt.getTime(),
+      );
+      expect(new Date(res.body.createdAt).getTime()).toBeLessThanOrEqual(
+        Date.now(),
+      );
       createdIngredientIds.push(res.body.id);
     });
 

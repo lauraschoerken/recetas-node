@@ -418,8 +418,9 @@ export class IngredientService {
           ? [{ name: safeSortOrder }, { id: "asc" }]
           : [
               { [safeSortBy]: safeSortOrder },
-              { name: "asc" },
-              { id: "asc" },
+              // Los ingredientes anteriores a la migración de timestamps
+              // comparten fecha. El id conserva su orden real de creación.
+              { id: safeSortOrder },
             ];
       const [raw, count] = await prisma.$transaction([
         prisma.ingredient.findMany({
