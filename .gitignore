@@ -33,13 +33,12 @@ dist-test
 # Archivos swap
 *.sw?
 
-# Bloqueo de dependencias
-package-lock.json
-
 # Extras recomendados
 # Variables de entorno
 .env
 .env.*
+!.env.example
+!.env.test.example
 
 # TypeScript build info
 tsconfig.tsbuildinfo

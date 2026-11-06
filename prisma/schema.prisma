@@ -113,6 +113,13 @@ model Workout {
   intensityMinutes  Int?
   maxVerticalSpeedMps Float?
   lapCount           Int?
+  averagePowerWatts  Int?
+  maxPowerWatts      Int?
+  normalizedPowerWatts Int?
+  totalReps          Int?
+  totalSets          Int?
+  aerobicTrainingEffect Float?
+  anaerobicTrainingEffect Float?
   user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   template           WorkoutTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
   createdAt          DateTime @default(now())

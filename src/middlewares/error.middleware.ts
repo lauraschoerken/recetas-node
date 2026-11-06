@@ -9,6 +9,6 @@ export const errorMiddleware = (
   console.error('Error:', err.message);
 
   res.status(500).json({
-    error: err.message || 'Error interno del servidor'
+    error: 'No se pudo completar la operación. Inténtalo de nuevo.'
   });
 };

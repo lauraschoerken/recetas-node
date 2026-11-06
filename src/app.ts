@@ -100,10 +100,13 @@ export function createApp() {
       _next: express.NextFunction,
     ) => {
       const status = err.httpCode || err.status || 500;
+      if (status >= 500) console.error("Error interno:", err);
       const message =
         err.type === "entity.too.large"
           ? "El archivo es demasiado grande para importarlo. Prueba con un PDF más pequeño o aumenta JSON_BODY_LIMIT en backend."
-          : err.message || "Error interno del servidor";
+          : status >= 500
+            ? "No se pudo completar la operación. Inténtalo de nuevo."
+            : err.message || "Error interno del servidor";
       res.status(status).json({ error: message });
     },
   );

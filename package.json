@@ -2,6 +2,7 @@
   "name": "recipe-api",
   "version": "1.0.0",
   "description": "API REST para gestión de recetas",
+  "license": "MIT",
   "main": "dist/index.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",

@@ -39,6 +39,13 @@ export interface WorkoutInput {
   intensityMinutes?: number | null;
   maxVerticalSpeedMps?: number | null;
   lapCount?: number | null;
+  averagePowerWatts?: number | null;
+  maxPowerWatts?: number | null;
+  normalizedPowerWatts?: number | null;
+  totalReps?: number | null;
+  totalSets?: number | null;
+  aerobicTrainingEffect?: number | null;
+  anaerobicTrainingEffect?: number | null;
 }
 
 export interface GarminWorkoutPreview extends WorkoutInput {
@@ -72,6 +79,13 @@ export interface GarminWorkoutPreview extends WorkoutInput {
   intensityMinutes: number | null;
   maxVerticalSpeedMps: number | null;
   lapCount: number | null;
+  averagePowerWatts: number | null;
+  maxPowerWatts: number | null;
+  normalizedPowerWatts: number | null;
+  totalReps: number | null;
+  totalSets: number | null;
+  aerobicTrainingEffect: number | null;
+  anaerobicTrainingEffect: number | null;
 }
 
 const GARMIN_HOST = 'connect.garmin.com';
@@ -123,7 +137,9 @@ export function normalizeGarminActivity(raw: any, sourceUrl: string, activityId:
     addCaloriesToGoal: false,
     templateId: null,
     source: 'garmin', externalId: activityId, sourceUrl,
-    activityType: raw?.activityTypeDTO?.typeKey ? String(raw.activityTypeDTO.typeKey) : null,
+    activityType: raw?.activityTypeDTO?.typeKey
+      ? String(raw.activityTypeDTO.typeKey)
+      : (raw?.activityTypeDTO?.parentTypeId != null ? String(raw.activityTypeDTO.parentTypeId) : null),
     locationName: raw?.locationName ? String(raw.locationName) : null,
     distanceMeters: optionalFinite(summary.distance), durationSeconds,
     movingDurationSeconds: optionalFinite(summary.movingDuration),
@@ -138,8 +154,8 @@ export function normalizeGarminActivity(raw: any, sourceUrl: string, activityId:
     averageElevationMeters: optionalFinite(summary.avgElevation),
     maxHeartRate: optionalRounded(summary.maxHR),
     minHeartRate: optionalRounded(summary.minHR),
-    averageCadence: optionalFinite(summary.averageRunCadence ?? summary.averageBikeCadence),
-    maxCadence: optionalFinite(summary.maxRunCadence ?? summary.maxBikeCadence),
+    averageCadence: optionalFinite(summary.averageRunCadence ?? summary.averageBikeCadence ?? summary.averageSwimCadence ?? summary.averageCadence),
+    maxCadence: optionalFinite(summary.maxRunCadence ?? summary.maxBikeCadence ?? summary.maxSwimCadence ?? summary.maxCadence),
     steps: optionalRounded(summary.steps), restingCalories,
     activeCalories: totalCalories == null ? null : Math.max(0, totalCalories - (restingCalories || 0)),
     estimatedSweatLossMl: optionalRounded(summary.waterEstimated),
@@ -148,6 +164,13 @@ export function normalizeGarminActivity(raw: any, sourceUrl: string, activityId:
       ? null : (moderateIntensityMinutes || 0) + (vigorousIntensityMinutes || 0) * 2,
     maxVerticalSpeedMps: optionalFinite(summary.maxVerticalSpeed),
     lapCount: optionalRounded(raw?.metadataDTO?.lapCount),
+    averagePowerWatts: optionalRounded(summary.averagePower ?? summary.avgPower),
+    maxPowerWatts: optionalRounded(summary.maxPower),
+    normalizedPowerWatts: optionalRounded(summary.normalizedPower ?? summary.normPower),
+    totalReps: optionalRounded(summary.totalReps ?? summary.reps ?? raw?.metadataDTO?.totalReps),
+    totalSets: optionalRounded(summary.totalSets ?? summary.setCount ?? raw?.metadataDTO?.totalSets),
+    aerobicTrainingEffect: optionalFinite(summary.aerobicTrainingEffect ?? summary.trainingEffect),
+    anaerobicTrainingEffect: optionalFinite(summary.anaerobicTrainingEffect),
   };
 }
 
@@ -211,6 +234,13 @@ class WorkoutService {
       intensityMinutes: optionalRounded(raw?.intensityMinutes),
       maxVerticalSpeedMps: optionalFinite(raw?.maxVerticalSpeedMps),
       lapCount: optionalRounded(raw?.lapCount),
+      averagePowerWatts: optionalRounded(raw?.averagePowerWatts),
+      maxPowerWatts: optionalRounded(raw?.maxPowerWatts),
+      normalizedPowerWatts: optionalRounded(raw?.normalizedPowerWatts),
+      totalReps: optionalRounded(raw?.totalReps),
+      totalSets: optionalRounded(raw?.totalSets),
+      aerobicTrainingEffect: optionalFinite(raw?.aerobicTrainingEffect),
+      anaerobicTrainingEffect: optionalFinite(raw?.anaerobicTrainingEffect),
     };
   }
 

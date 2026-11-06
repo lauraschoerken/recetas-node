@@ -309,7 +309,7 @@ Fichero: `recetas-node/.env` (no incluido en git)
 | ---------------------- | --------------------------------- | -------------------------------------------------- |
 | `DATABASE_URL`         | Conexión PostgreSQL               | `postgresql://user:pass@localhost:5432/recipes_db` |
 | `JWT_SECRET`           | Clave secreta para firmar JWT     | `cambiar-en-produccion`                            |
-| `PORT`                 | Puerto del servidor               | `3002`                                             |
+| `PORT`                 | Puerto del servidor               | `3001`                                             |
 | `JSON_BODY_LIMIT`      | Límite de payload JSON            | `10mb`                                             |
 | `CORS_ALLOWED_ORIGINS` | Orígenes CORS permitidos (comas)  | `http://localhost:3000`                            |
 | `SMTP_HOST`            | Host SMTP para emails             | `smtp.gmail.com`                                   |
@@ -324,7 +324,7 @@ Fichero: `recetas-node/.env` (no incluido en git)
 
 ```bash
 cd recetas-node
-npm install
+npm ci
 
 # Desarrollo con hot-reload
 npm run dev
@@ -376,11 +376,15 @@ npm run test:db:setup     # Crear DB de test desde cero
 - `.env.test` con `DATABASE_URL` apuntando a `recipes_db_test`
 - La DB de test se prepara con `npm run test:db:setup`
 
+> **Advertencia:** el `globalSetup` de Jest ejecuta `prisma migrate deploy` y, si falla,
+> usa `prisma db push --force-reset --accept-data-loss`. La base configurada debe ser
+> desechable y exclusiva para tests. Nunca uses una URL de producción o compartida.
+
 ---
 
 ## Swagger / Documentación de API
 
-- Disponible en: `http://localhost:3002/api-docs` (cuando el servidor está corriendo)
+- Disponible en: `http://localhost:3002/api-docs` con el `.env.example` (cuando el servidor está corriendo)
 - La configuración base está en `src/swagger.ts`
 - Los endpoints se documentan con comentarios JSDoc `@swagger` en cada controller
 - La seguridad global requiere `bearerAuth` (JWT)
