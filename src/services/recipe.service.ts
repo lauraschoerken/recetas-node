@@ -112,9 +112,14 @@ export class RecipeService {
       sortBy?: string;
       sortOrder?: string;
       authorId?: number;
+      hidden?: string;
       userRole?: string;
     } = {},
-  ): Promise<{ data: RecipeWithComponents[]; total: number }> {
+  ): Promise<{
+    data: RecipeWithComponents[];
+    total: number;
+    hiddenTotal: number;
+  }> {
     const {
       page,
       pageSize,
@@ -129,6 +134,7 @@ export class RecipeService {
       sortBy = "createdAt",
       sortOrder = "desc",
       authorId,
+      hidden = "exclude",
       userRole,
     } = opts;
 
@@ -182,10 +188,19 @@ export class RecipeService {
       ingredientIds = rows.map((r) => r.id);
     }
 
-    const where = {
+    const buildHiddenFilter = (scope: string) =>
+      scope === "only"
+        ? {
+            hiddenByUsers: { some: { userId } },
+            isPublic: true,
+            userId: { not: userId },
+          }
+        : { NOT: { hiddenByUsers: { some: { userId } } } };
+
+    const buildWhere = (hiddenScope: string) => ({
       AND: [
         visibilityFilter,
-        { NOT: { hiddenByUsers: { some: { userId } } } },
+        buildHiddenFilter(hiddenScope),
         ...(searchIds !== null ? [{ id: { in: searchIds } }] : []),
         ...(ingredientIds !== null
           ? ingredientIds.length > 0
@@ -252,8 +267,10 @@ export class RecipeService {
           : []),
         ...(authorId != null ? [{ userId: authorId }] : []),
       ],
-    };
-    const [recipes, total] = await prisma.$transaction([
+    });
+    const where = buildWhere(hidden);
+    const hiddenWhere = buildWhere("only");
+    const [recipes, total, hiddenTotal] = await prisma.$transaction([
       prisma.recipe.findMany({
         where,
         include: recipeInclude,
@@ -263,6 +280,7 @@ export class RecipeService {
           : {}),
       }),
       prisma.recipe.count({ where }),
+      prisma.recipe.count({ where: hiddenWhere }),
     ]);
 
     const mapped = recipes.map((r) => this.mapRecipe(r, r.user.name));
@@ -293,23 +311,33 @@ export class RecipeService {
     return {
       data: await this.applyUserConversionOverridesToRecipes(mapped, userId),
       total,
+      hiddenTotal,
     };
   }
 
   async getAuthors(
     userId: number,
     userRole?: string,
+    hidden = "exclude",
   ): Promise<{ id: number; name: string }[]> {
-    const visibilityFilter =
-      userRole === "ADMIN" ? {} : { OR: [{ userId }, { isPublic: true }] };
+    const recipeFilters =
+      hidden === "only"
+        ? [
+            { isPublic: true },
+            { userId: { not: userId } },
+            { hiddenByUsers: { some: { userId } } },
+          ]
+        : [
+            userRole === "ADMIN"
+              ? {}
+              : { OR: [{ userId }, { isPublic: true }] },
+            { NOT: { hiddenByUsers: { some: { userId } } } },
+          ];
     const users = await prisma.user.findMany({
       where: {
         recipes: {
           some: {
-            AND: [
-              visibilityFilter,
-              { NOT: { hiddenByUsers: { some: { userId } } } },
-            ],
+            AND: recipeFilters,
           },
         },
       },
@@ -345,20 +373,11 @@ export class RecipeService {
     });
   }
 
-  async getHidden(userId: number): Promise<RecipeWithComponents[]> {
-    const rows = await prisma.recipeUserHide.findMany({
-      where: {
-        userId,
-        recipe: { isPublic: true, userId: { not: userId } },
-      },
-      include: { recipe: { include: recipeInclude } },
-      orderBy: { createdAt: "desc" },
-    });
-
-    const mapped = rows.map((row) =>
-      this.mapRecipe(row.recipe, row.recipe.user.name),
-    );
-    return this.applyUserConversionOverridesToRecipes(mapped, userId);
+  async getHidden(
+    userId: number,
+    opts: { page?: number; pageSize?: number; search?: string; authorId?: number },
+  ) {
+    return this.getAll(userId, { ...opts, hidden: "only" });
   }
 
   async getById(
@@ -373,12 +392,19 @@ export class RecipeService {
           ? {}
           : { OR: [{ userId }, { isPublic: true }] }),
       },
-      include: recipeInclude,
+      include: {
+        ...recipeInclude,
+        hiddenByUsers: {
+          where: { userId },
+          select: { id: true },
+        },
+      },
     });
 
     if (!recipe) return null;
 
     const mapped = this.mapRecipe(recipe, recipe.user.name);
+    mapped.isHiddenForCurrentUser = recipe.hiddenByUsers.length > 0;
 
     // Aplicar preferencias de usuario sobre tags: color override y filtrar ocultas
     if (mapped.tags && mapped.tags.length > 0) {
@@ -796,9 +822,13 @@ export class RecipeService {
     )[0];
   }
 
-  async delete(id: number, userId: number): Promise<boolean> {
+  async delete(
+    id: number,
+    userId: number,
+    userRole?: string,
+  ): Promise<boolean> {
     const existing = await prisma.recipe.findFirst({
-      where: { id, userId },
+      where: { id, ...(userRole === "ADMIN" ? {} : { userId }) },
     });
 
     if (!existing) return false;

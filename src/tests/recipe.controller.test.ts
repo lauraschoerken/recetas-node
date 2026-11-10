@@ -265,5 +265,14 @@ describe("Recipe Controller", () => {
         ]),
       );
     });
+
+    it("lets an admin delete a recipe owned by another user", async () => {
+      const res = await request(app)
+        .delete(`/api/recipes/${privateRecipeId}`)
+        .set("Authorization", `Bearer ${admin.token}`);
+
+      expect(res.status).toBe(204);
+      expect(await prisma.recipe.findUnique({ where: { id: privateRecipeId } })).toBeNull();
+    });
   });
 });

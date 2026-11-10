@@ -38,7 +38,7 @@ export class RecipeController {
    *         name: pageSize
    *         schema:
    *           type: integer
-   *           default: 12
+   *           default: 30
    *         description: Elementos por página
    *       - in: query
    *         name: search
@@ -52,6 +52,13 @@ export class RecipeController {
    *           enum: [all, public, mine]
    *           default: all
    *         description: Filtrar por visibilidad (all/public/mine)
+   *       - in: query
+   *         name: hidden
+   *         schema:
+   *           type: string
+   *           enum: [exclude, only]
+   *           default: exclude
+   *         description: Excluir las recetas ocultas o devolver exclusivamente las ocultas
    *       - in: query
    *         name: ingredient
    *         schema:
@@ -88,6 +95,7 @@ export class RecipeController {
     @QueryParam("sortBy") sortBy?: string,
     @QueryParam("sortOrder") sortOrder?: string,
     @QueryParam("author") author?: number,
+    @QueryParam("hidden") hidden?: string,
   ) {
     const parsedTagIds = tagIds
       ? tagIds
@@ -115,6 +123,7 @@ export class RecipeController {
       sortBy,
       sortOrder,
       authorId: author,
+      hidden,
       userRole: req.userRole,
     });
   }
@@ -130,13 +139,27 @@ export class RecipeController {
    *         description: Lista de autores
    */
   @Get("/authors")
-  async getAuthors(@Req() req: AuthRequest) {
-    return recipeService.getAuthors(req.userId!, req.userRole);
+  async getAuthors(
+    @Req() req: AuthRequest,
+    @QueryParam("hidden") hidden?: string,
+  ) {
+    return recipeService.getAuthors(req.userId!, req.userRole, hidden);
   }
 
   @Get("/hidden")
-  async getHidden(@Req() req: AuthRequest) {
-    return recipeService.getHidden(req.userId!);
+  async getHidden(
+    @Req() req: AuthRequest,
+    @QueryParam("page") page?: number,
+    @QueryParam("pageSize") pageSize?: number,
+    @QueryParam("search") search?: string,
+    @QueryParam("author") author?: number,
+  ) {
+    return recipeService.getHidden(req.userId!, {
+      page,
+      pageSize,
+      search,
+      authorId: author,
+    });
   }
 
   /**
@@ -283,7 +306,7 @@ export class RecipeController {
   @Delete("/:id")
   @HttpCode(204)
   async delete(@Param("id") id: number, @Req() req: AuthRequest) {
-    const deleted = await recipeService.delete(id, req.userId!);
+    const deleted = await recipeService.delete(id, req.userId!, req.userRole);
 
     if (!deleted) {
       throw { httpCode: 404, message: "Receta no encontrada" };

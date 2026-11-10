@@ -51,7 +51,9 @@ describe("Recipe Controller — Filtros, Paginación y Permisos", () => {
           .send({
             title: `Paginacion Recipe ${i}`,
             servings: 4,
-            ingredients: [],
+            ingredients: [
+              { ingredientId, name: "Ingrediente test", quantity: 1, unit: "g" },
+            ],
           });
       }
     });
@@ -113,7 +115,9 @@ describe("Recipe Controller — Filtros, Paginación y Permisos", () => {
           title: "Receta Publica de B",
           servings: 2,
           isPublic: true,
-          ingredients: [],
+          ingredients: [
+            { ingredientId, name: "Ingrediente test", quantity: 1, unit: "g" },
+          ],
         });
       publicRecipeId = pubRes.body.id;
 
@@ -124,7 +128,9 @@ describe("Recipe Controller — Filtros, Paginación y Permisos", () => {
           title: "Receta Privada de B",
           servings: 2,
           isPublic: false,
-          ingredients: [],
+          ingredients: [
+            { ingredientId, name: "Ingrediente test", quantity: 1, unit: "g" },
+          ],
         });
       privateRecipeId = privRes.body.id;
     });
@@ -172,12 +178,47 @@ describe("Recipe Controller — Filtros, Paginación y Permisos", () => {
       expect(listWhileHidden.body.data.map((r: any) => r.id)).not.toContain(
         publicRecipeId,
       );
+      expect(listWhileHidden.body.hiddenTotal).toBeGreaterThanOrEqual(1);
+
+      const filteredNormalList = await request(app)
+        .get(`/api/recipes?search=Publica&author=${userB.id}`)
+        .set("Authorization", `Bearer ${userA.token}`);
+      expect(filteredNormalList.body.data.map((r: any) => r.id)).not.toContain(
+        publicRecipeId,
+      );
+      expect(filteredNormalList.body.hiddenTotal).toBe(1);
 
       const hidden = await request(app)
-        .get("/api/recipes/hidden")
+        .get("/api/recipes/hidden?page=1&pageSize=1&search=Publica")
         .set("Authorization", `Bearer ${userA.token}`);
       expect(hidden.status).toBe(200);
-      expect(hidden.body.map((r: any) => r.id)).toContain(publicRecipeId);
+      expect(hidden.body.total).toBe(1);
+      expect(hidden.body.data.map((r: any) => r.id)).toContain(publicRecipeId);
+
+      const directWhileHidden = await request(app)
+        .get(`/api/recipes/${publicRecipeId}`)
+        .set("Authorization", `Bearer ${userA.token}`);
+      expect(directWhileHidden.status).toBe(200);
+      expect(directWhileHidden.body.isHiddenForCurrentUser).toBe(true);
+
+      const hiddenPage = await request(app)
+        .get(
+          `/api/recipes?hidden=only&page=1&pageSize=1&search=Publica&author=${userB.id}`,
+        )
+        .set("Authorization", `Bearer ${userA.token}`);
+      expect(hiddenPage.status).toBe(200);
+      expect(hiddenPage.body.total).toBe(1);
+      expect(hiddenPage.body.data.map((r: any) => r.id)).toEqual([
+        publicRecipeId,
+      ]);
+
+      const hiddenAuthors = await request(app)
+        .get("/api/recipes/authors?hidden=only")
+        .set("Authorization", `Bearer ${userA.token}`);
+      expect(hiddenAuthors.status).toBe(200);
+      expect(hiddenAuthors.body.map((author: any) => author.id)).toContain(
+        userB.id,
+      );
 
       const ownerList = await request(app)
         .get("/api/recipes?visibility=mine")
@@ -196,6 +237,127 @@ describe("Recipe Controller — Filtros, Paginación y Permisos", () => {
         .set("Authorization", `Bearer ${userA.token}`);
       expect(listRestored.body.data.map((r: any) => r.id)).toContain(
         publicRecipeId,
+      );
+
+      const directAfterRestore = await request(app)
+        .get(`/api/recipes/${publicRecipeId}`)
+        .set("Authorization", `Bearer ${userA.token}`);
+      expect(directAfterRestore.body.isHiddenForCurrentUser).toBe(false);
+    });
+
+    it("no revela una receta oculta si pasa a privada y la recupera si vuelve a ser pública", async () => {
+      await request(app)
+        .post(`/api/recipes/${publicRecipeId}/hide`)
+        .set("Authorization", `Bearer ${userA.token}`);
+
+      expect(
+        (
+          await request(app)
+            .put(`/api/recipes/${publicRecipeId}`)
+            .set("Authorization", `Bearer ${userB.token}`)
+            .send({ isPublic: false })
+        ).status,
+      ).toBe(200);
+
+      const privateHidden = await request(app)
+        .get("/api/recipes?hidden=only&search=Publica")
+        .set("Authorization", `Bearer ${userA.token}`);
+      expect(privateHidden.body.total).toBe(0);
+      expect(
+        (
+          await request(app)
+            .get(`/api/recipes/${publicRecipeId}`)
+            .set("Authorization", `Bearer ${userA.token}`)
+        ).status,
+      ).toBe(404);
+
+      await request(app)
+        .put(`/api/recipes/${publicRecipeId}`)
+        .set("Authorization", `Bearer ${userB.token}`)
+        .send({ isPublic: true });
+
+      const publicAgain = await request(app)
+        .get("/api/recipes?hidden=only&search=Publica")
+        .set("Authorization", `Bearer ${userA.token}`);
+      expect(publicAgain.body.data.map((recipe: any) => recipe.id)).toContain(
+        publicRecipeId,
+      );
+
+      await request(app)
+        .delete(`/api/recipes/${publicRecipeId}/hide`)
+        .set("Authorization", `Bearer ${userA.token}`);
+    });
+
+    it("elimina del listado oculto una receta cuyo original ha sido borrado", async () => {
+      const created = await request(app)
+        .post("/api/recipes")
+        .set("Authorization", `Bearer ${userB.token}`)
+        .send({
+          title: "Receta oculta que se borra",
+          servings: 2,
+          isPublic: true,
+          ingredients: [
+            { ingredientId, name: "Ingrediente test", quantity: 1, unit: "g" },
+          ],
+        });
+      const recipeId = created.body.id;
+
+      await request(app)
+        .post(`/api/recipes/${recipeId}/hide`)
+        .set("Authorization", `Bearer ${userA.token}`);
+      await request(app)
+        .delete(`/api/recipes/${recipeId}`)
+        .set("Authorization", `Bearer ${userB.token}`);
+
+      const hiddenAfterDelete = await request(app)
+        .get("/api/recipes?hidden=only&search=oculta%20que%20se%20borra")
+        .set("Authorization", `Bearer ${userA.token}`);
+      expect(hiddenAfterDelete.body.total).toBe(0);
+      expect(hiddenAfterDelete.body.data).toEqual([]);
+    });
+
+    it("mantiene total y página coherentes al restaurar la última oculta de una página", async () => {
+      const ids: number[] = [];
+      for (const suffix of ["A", "B"]) {
+        const created = await request(app)
+          .post("/api/recipes")
+          .set("Authorization", `Bearer ${userB.token}`)
+          .send({
+            title: `Oculta paginada ${suffix}`,
+            servings: 2,
+            isPublic: true,
+            ingredients: [
+              { ingredientId, name: "Ingrediente test", quantity: 1, unit: "g" },
+            ],
+          });
+        ids.push(created.body.id);
+        await request(app)
+          .post(`/api/recipes/${created.body.id}/hide`)
+          .set("Authorization", `Bearer ${userA.token}`);
+      }
+
+      const secondPage = await request(app)
+        .get("/api/recipes?hidden=only&search=Oculta%20paginada&page=2&pageSize=1")
+        .set("Authorization", `Bearer ${userA.token}`);
+      expect(secondPage.body.total).toBe(2);
+      expect(secondPage.body.data).toHaveLength(1);
+
+      await request(app)
+        .delete(`/api/recipes/${secondPage.body.data[0].id}/hide`)
+        .set("Authorization", `Bearer ${userA.token}`);
+
+      const pageAfterRestore = await request(app)
+        .get("/api/recipes?hidden=only&search=Oculta%20paginada&page=2&pageSize=1")
+        .set("Authorization", `Bearer ${userA.token}`);
+      expect(pageAfterRestore.body.total).toBe(1);
+      expect(pageAfterRestore.body.data).toEqual([]);
+
+      await Promise.all(
+        ids.map((id) =>
+          request(app)
+            .delete(`/api/recipes/${id}/hide`)
+            .set("Authorization", `Bearer ${userA.token}`),
+        ),
       );
     });
 
@@ -220,7 +382,9 @@ describe("Recipe Controller — Filtros, Paginación y Permisos", () => {
         .send({
           title: "Receta de A para permisos",
           servings: 4,
-          ingredients: [],
+          ingredients: [
+            { ingredientId, name: "Ingrediente test", quantity: 1, unit: "g" },
+          ],
         });
       recipeOfA = res.body.id;
     });
@@ -256,7 +420,9 @@ describe("Recipe Controller — Filtros, Paginación y Permisos", () => {
         .send({
           title: "Receta Unica Para Busqueda",
           servings: 4,
-          ingredients: [],
+          ingredients: [
+            { ingredientId, name: "Ingrediente test", quantity: 1, unit: "g" },
+          ],
         });
       searchRecipeId = res.body.id;
     });

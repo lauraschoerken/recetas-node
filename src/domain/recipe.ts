@@ -13,6 +13,7 @@ export interface Recipe {
   userId: number;
   createdAt: Date;
   updatedAt: Date;
+  isHiddenForCurrentUser?: boolean;
 }
 
 export interface RecipeComponentOption {
