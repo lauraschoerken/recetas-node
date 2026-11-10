@@ -232,6 +232,8 @@ model Ingredient {
   defaultLocation String?
   createdAt       DateTime                 @default(now())
   updatedAt       DateTime                 @updatedAt
+  reviewedAt      DateTime?
+  reviewedByUserId Int?
   createdBy       User?                   @relation("UserCreatedIngredients", fields: [createdByUserId], references: [id], onDelete: SetNull)
   recipes         RecipeIngredient[]
   componentOptions RecipeComponentOption[]
@@ -249,6 +251,20 @@ model Ingredient {
   proposals              IngredientProposal[]
   storeItems             UserStoreIngredient[]
   shoppingOverrides      ShoppingOverride[]
+  auditLogs              IngredientAuditLog[]
+}
+
+model IngredientAuditLog {
+  id           Int         @id @default(autoincrement())
+  ingredientId Int?
+  actorUserId  Int
+  action       String      // REVIEWED | IMPORTED | MERGED
+  details      Json?
+  createdAt    DateTime    @default(now())
+  ingredient   Ingredient? @relation(fields: [ingredientId], references: [id], onDelete: SetNull)
+
+  @@index([ingredientId, createdAt])
+  @@index([actorUserId, createdAt])
 }
 
 model IngredientVariant {

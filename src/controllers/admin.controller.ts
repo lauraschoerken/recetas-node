@@ -1,6 +1,8 @@
 import {
   JsonController,
   Get,
+  Post,
+  Patch,
   Put,
   Delete,
   Param,
@@ -125,5 +127,36 @@ export class AdminController {
   @Get("/proposals/pending")
   async getPendingProposals() {
     return adminService.getPendingProposals();
+  }
+
+  @Get("/ingredients/audit")
+  async getIngredientAudit() {
+    return adminService.getIngredientAudit();
+  }
+
+  @Post("/ingredients/audit/export")
+  async exportIngredients(@Body() body: { ids?: number[] }) {
+    return adminService.exportIngredients(body?.ids ?? []);
+  }
+
+  @Post("/ingredients/audit/import")
+  async importIngredients(
+    @Body() body: { payload?: unknown; dryRun?: boolean },
+    @Req() req: AuthRequest,
+  ) {
+    return adminService.importIngredients(body?.payload, req.userId!, Boolean(body?.dryRun));
+  }
+
+  @Patch("/ingredients/:id/reviewed")
+  async markIngredientReviewed(@Param("id") id: number, @Req() req: AuthRequest) {
+    return adminService.markIngredientReviewed(id, req.userId!);
+  }
+
+  @Post("/ingredients/merge")
+  async mergeIngredients(
+    @Body() body: { targetId?: number; sourceIds?: number[] },
+    @Req() req: AuthRequest,
+  ) {
+    return adminService.mergeIngredients(Number(body?.targetId), body?.sourceIds ?? [], req.userId!);
   }
 }
