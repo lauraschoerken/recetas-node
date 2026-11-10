@@ -130,8 +130,13 @@ export class AdminController {
   }
 
   @Get("/ingredients/audit")
-  async getIngredientAudit() {
-    return adminService.getIngredientAudit();
+  async getIngredientAudit(
+    @QueryParam("page") page?: number,
+    @QueryParam("pageSize") pageSize?: number,
+    @QueryParam("search") search?: string,
+    @QueryParam("issue") issue?: string,
+  ) {
+    return adminService.getIngredientAudit({ page, pageSize, search, issue });
   }
 
   @Post("/ingredients/audit/export")

@@ -155,9 +155,93 @@ export class AdminService {
     });
   }
 
-  async getIngredientAudit() {
-    const ingredients = await prisma.ingredient.findMany({
-      where: { status: { in: ["GLOBAL", "PENDING"] } },
+  async getIngredientAudit(
+    opts: {
+      page?: number;
+      pageSize?: number;
+      search?: string;
+      issue?: string;
+    } = {},
+  ) {
+    const page = Math.max(1, Number(opts.page) || 1);
+    const pageSize = Math.min(100, Math.max(10, Number(opts.pageSize) || 30));
+    const search = String(opts.search ?? "").trim();
+    const issue = String(opts.issue ?? "ALL");
+    const baseWhere = { status: { in: ["GLOBAL", "PENDING"] } };
+
+    // Para detectar duplicados solo cargamos id/nombre. Los datos pesados (variantes,
+    // conversiones, tags y usos) se consultan exclusivamente para la página actual.
+    const allNames = await prisma.ingredient.findMany({
+      where: baseWhere,
+      select: { id: true, name: true },
+    });
+    const duplicateMap = new Map<number, Array<{ id: number; name: string; score: number }>>();
+    const buckets = new Map<string, Array<{ id: number; name: string; normalized: string }>>();
+    for (const ingredient of allNames) {
+      const normalized = normalizeName(ingredient.name);
+      const key = normalized.charAt(0);
+      const bucket = buckets.get(key) ?? [];
+      bucket.push({ ...ingredient, normalized });
+      buckets.set(key, bucket);
+    }
+    for (const bucket of buckets.values()) {
+      for (let leftIndex = 0; leftIndex < bucket.length; leftIndex += 1) {
+        for (let rightIndex = leftIndex + 1; rightIndex < bucket.length; rightIndex += 1) {
+          const left = bucket[leftIndex];
+          const right = bucket[rightIndex];
+          if (Math.abs(left.normalized.length - right.normalized.length) > Math.max(3, left.normalized.length * 0.35)) continue;
+          const score = similarity(left.normalized, right.normalized);
+          if (score < 0.82) continue;
+          duplicateMap.set(left.id, [...(duplicateMap.get(left.id) ?? []), { id: right.id, name: right.name, score }]);
+          duplicateMap.set(right.id, [...(duplicateMap.get(right.id) ?? []), { id: left.id, name: left.name, score }]);
+        }
+      }
+    }
+
+    let searchIds: number[] | undefined;
+    if (search) {
+      const pattern = `%${search}%`;
+      const rows = await prisma.$queryRaw<{ id: number }[]>(
+        Prisma.sql`SELECT id FROM "Ingredient"
+          WHERE status IN ('GLOBAL', 'PENDING')
+            AND (unaccent(lower(name)) LIKE unaccent(lower(${pattern})) OR CAST(id AS TEXT) = ${search})`,
+      );
+      searchIds = rows.map((row) => row.id);
+    }
+    const issueWhere: Record<string, object> = {
+      MISSING_IMAGE: { OR: [{ imageUrl: null }, { imageUrl: "" }] },
+      MISSING_MACROS: {
+        OR: [
+          { variants: { none: {} } },
+          {
+            variants: {
+              some: {
+                OR: [
+                  { calories: null },
+                  { protein: null },
+                  { carbs: null },
+                  { fat: null },
+                  { fiber: null },
+                ],
+              },
+            },
+          },
+        ],
+      },
+      POSSIBLE_DUPLICATE: { id: { in: [...duplicateMap.keys()] } },
+      UNREVIEWED: { reviewedAt: null },
+    };
+    const where = {
+      AND: [
+        baseWhere,
+        ...(searchIds ? [{ id: { in: searchIds } }] : []),
+        ...(issueWhere[issue] ? [issueWhere[issue]] : []),
+      ],
+    };
+
+    const [ingredients, total, missingImages, missingMacros, unreviewed] = await prisma.$transaction([
+      prisma.ingredient.findMany({
+      where,
       select: {
         ...editableIngredientSelect,
         createdBy: { select: { id: true, name: true, email: true } },
@@ -181,19 +265,43 @@ export class AdminService {
         },
       },
       orderBy: { createdAt: "desc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      }),
+      prisma.ingredient.count({ where }),
+      prisma.ingredient.count({ where: { AND: [baseWhere, issueWhere.MISSING_IMAGE] } }),
+      prisma.ingredient.count({ where: { AND: [baseWhere, issueWhere.MISSING_MACROS] } }),
+      prisma.ingredient.count({ where: { AND: [baseWhere, issueWhere.UNREVIEWED] } }),
+    ]);
+    const candidateIds = [
+      ...new Set(
+        ingredients.flatMap((ingredient) =>
+          (duplicateMap.get(ingredient.id) ?? []).slice(0, 5).map((candidate) => candidate.id),
+        ),
+      ),
+    ];
+    const candidateDetails = await prisma.ingredient.findMany({
+      where: { id: { in: candidateIds } },
+      select: {
+        id: true,
+        variants: { select: editableIngredientSelect.variants.select },
+        conversions: { select: editableIngredientSelect.conversions.select },
+      },
     });
+    const candidateDetailsById = new Map(candidateDetails.map((candidate) => [candidate.id, candidate]));
 
-    const normalized = ingredients.map((item) => normalizeName(item.name));
-    return ingredients.map((ingredient, index) => {
-      const duplicateCandidates = ingredients
-        .map((candidate, candidateIndex) => ({
-          id: candidate.id,
-          name: candidate.name,
-          score: similarity(normalized[index], normalized[candidateIndex]),
-        }))
-        .filter((candidate) => candidate.id !== ingredient.id && candidate.score >= 0.82)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 5);
+    const data = ingredients.map((ingredient) => {
+      const duplicateCandidates = (duplicateMap.get(ingredient.id) ?? [])
+        .sort((left, right) => right.score - left.score)
+        .slice(0, 5)
+        .map((candidate) => {
+          const details = candidateDetailsById.get(candidate.id);
+          return {
+            ...candidate,
+            variants: details?.variants ?? [],
+            conversions: details?.conversions ?? [],
+          };
+        });
       const missingMacros =
         ingredient.variants.length === 0 ||
         ingredient.variants.some((variant) =>
@@ -231,6 +339,18 @@ export class AdminService {
         _count: undefined,
       };
     });
+    return {
+      data,
+      total,
+      page,
+      pageSize,
+      summary: {
+        MISSING_IMAGE: missingImages,
+        MISSING_MACROS: missingMacros,
+        POSSIBLE_DUPLICATE: duplicateMap.size,
+        UNREVIEWED: unreviewed,
+      },
+    };
   }
 
   async exportIngredients(ids: number[]) {
