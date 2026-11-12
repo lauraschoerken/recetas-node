@@ -99,6 +99,7 @@ describe('Validación del perfil para macros', () => {
     [{ gender: 'other' as never }, 'gender'],
     [{ activityLevel: 'unknown' as never }, 'activityLevel'],
     [{ goal: 'unknown' as never }, 'goal'],
+	[{ recipeCardStyle: 'unknown' as never }, 'recipeCardStyle'],
   ])('rechaza %o', (profile, field) => {
     expect(() => validateUserProfile(profile)).toThrow(
       expect.objectContaining({ httpCode: 400, message: expect.stringContaining(field) })

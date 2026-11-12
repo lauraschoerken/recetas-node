@@ -105,6 +105,22 @@ describe("Profile Controller", () => {
       expect(res.body).toHaveProperty("weight", 72);
     });
 
+	it("persiste el estilo de tarjetas entre sesiones", async () => {
+	  const update = await request(app)
+	    .put("/api/profile")
+	    .set("Authorization", `Bearer ${testUser.token}`)
+	    .send({ recipeCardStyle: "minimal" });
+
+	  expect(update.status).toBe(200);
+	  expect(update.body).toHaveProperty("recipeCardStyle", "minimal");
+
+	  const profile = await request(app)
+	    .get("/api/profile")
+	    .set("Authorization", `Bearer ${testUser.token}`);
+
+	  expect(profile.body).toHaveProperty("recipeCardStyle", "minimal");
+	});
+
     it("rechaza valores y enumeraciones no válidos", async () => {
       const invalidAge = await request(app)
         .put("/api/profile")

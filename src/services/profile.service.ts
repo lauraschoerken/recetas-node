@@ -5,6 +5,7 @@ const prisma = new PrismaClient();
 export type Gender = 'male' | 'female';
 export type ActivityLevel = 'sedentary' | 'light' | 'moderate' | 'active' | 'very_active';
 export type Goal = 'maintain' | 'lose' | 'gain';
+export type RecipeCardStyle = 'minimal' | 'visual';
 
 export interface UserProfile {
   imageUrl?: string;
@@ -20,6 +21,7 @@ export interface UserProfile {
   customCarbs?: number | null;
   customFat?: number | null;
   customFiber?: number | null;
+  recipeCardStyle?: RecipeCardStyle;
 }
 
 export interface RecommendedMacros {
@@ -97,6 +99,7 @@ const PROTEIN_FACTORS: Record<ActivityLevel, Record<Goal, number>> = {
 const VALID_GENDERS: Gender[] = ['male', 'female'];
 const VALID_ACTIVITY_LEVELS: ActivityLevel[] = ['sedentary', 'light', 'moderate', 'active', 'very_active'];
 const VALID_GOALS: Goal[] = ['maintain', 'lose', 'gain'];
+const VALID_RECIPE_CARD_STYLES: RecipeCardStyle[] = ['minimal', 'visual'];
 
 function validateRange(name: string, value: number | null | undefined, min: number, max: number, integer = false) {
   if (value == null) return;
@@ -127,6 +130,9 @@ export function validateUserProfile(data: Partial<UserProfile>) {
   }
   if (data.activityLevel != null && !VALID_ACTIVITY_LEVELS.includes(data.activityLevel)) {
     throw { httpCode: 400, message: 'activityLevel no es válido' };
+  }
+  if (data.recipeCardStyle != null && !VALID_RECIPE_CARD_STYLES.includes(data.recipeCardStyle)) {
+    throw { httpCode: 400, message: 'recipeCardStyle no es válido' };
   }
   if (data.goal != null && !VALID_GOALS.includes(data.goal)) {
     throw { httpCode: 400, message: 'goal no es válido' };
@@ -223,7 +229,8 @@ class ProfileService {
         customProtein: true,
         customCarbs: true,
         customFat: true,
-        customFiber: true
+        customFiber: true,
+        recipeCardStyle: true
       }
     });
 
@@ -244,7 +251,8 @@ class ProfileService {
       customProtein: user.customProtein ?? undefined,
       customCarbs: user.customCarbs ?? undefined,
       customFat: user.customFat ?? undefined,
-      customFiber: user.customFiber ?? undefined
+      customFiber: user.customFiber ?? undefined,
+      recipeCardStyle: user.recipeCardStyle as RecipeCardStyle | undefined
     };
   }
 
@@ -265,7 +273,8 @@ class ProfileService {
         customProtein: data.customProtein,
         customCarbs: data.customCarbs,
         customFat: data.customFat,
-        customFiber: data.customFiber
+        customFiber: data.customFiber,
+        recipeCardStyle: data.recipeCardStyle
       },
       select: {
         imageUrl: true,
@@ -280,7 +289,8 @@ class ProfileService {
         customProtein: true,
         customCarbs: true,
         customFat: true,
-        customFiber: true
+        customFiber: true,
+        recipeCardStyle: true
       }
     });
 
@@ -297,7 +307,8 @@ class ProfileService {
       customProtein: user.customProtein ?? undefined,
       customCarbs: user.customCarbs ?? undefined,
       customFat: user.customFat ?? undefined,
-      customFiber: user.customFiber ?? undefined
+      customFiber: user.customFiber ?? undefined,
+      recipeCardStyle: user.recipeCardStyle as RecipeCardStyle | undefined
     };
   }
 

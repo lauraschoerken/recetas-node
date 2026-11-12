@@ -30,6 +30,7 @@ model User {
   customFiber    Int?
   role           String     @default("USER") // "USER" | "ADMIN"
   planningAlertScope String?                 // "own" | "all"
+  recipeCardStyle   String?                 // "minimal" | "visual"
   recipes        Recipe[]
   weekPlans      WeekPlan[]
   workouts       Workout[]

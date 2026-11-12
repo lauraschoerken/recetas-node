@@ -1,6 +1,6 @@
 import { JsonController, Get, Put, Body, QueryParam, Req, UseBefore } from 'routing-controllers';
 import { profileService } from '../services';
-import { Gender, ActivityLevel, Goal, UserProfile } from '../services/profile.service';
+import { Gender, ActivityLevel, Goal, RecipeCardStyle, UserProfile } from '../services/profile.service';
 import { authMiddleware, AuthRequest } from '../middlewares';
 
 /**
@@ -37,6 +37,9 @@ import { authMiddleware, AuthRequest } from '../middlewares';
  *           type: integer
  *         customFiber:
  *           type: integer
+ *         recipeCardStyle:
+ *           type: string
+ *           enum: [minimal, visual]
  *     RecommendedMacros:
  *       type: object
  *       properties:
@@ -140,6 +143,7 @@ export class ProfileController {
       customCarbs?: number | null;
       customFat?: number | null;
       customFiber?: number | null;
+      recipeCardStyle?: string;
     },
     @Req() req: AuthRequest
   ) {
@@ -147,7 +151,8 @@ export class ProfileController {
       ...body,
       gender: body.gender as Gender | undefined,
       activityLevel: body.activityLevel as ActivityLevel | undefined,
-      goal: body.goal as Goal | undefined
+      goal: body.goal as Goal | undefined,
+      recipeCardStyle: body.recipeCardStyle as RecipeCardStyle | undefined
     };
     return profileService.updateProfile(req.userId!, profileData);
   }
