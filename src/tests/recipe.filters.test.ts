@@ -26,17 +26,20 @@ describe("Recipe Controller — Filtros, Paginación y Permisos", () => {
   let userA: TestUser;
   let userB: TestUser;
   let ingredientId: number;
+  let componentIngredientId: number;
 
   beforeAll(async () => {
     userA = await createTestUser("recipe_filters_a");
     userB = await createTestUser("recipe_filters_b");
     ingredientId = await createTestIngredient("recipe_filters_test");
+    componentIngredientId = await createTestIngredient("recipe_filters_component");
   });
 
   afterAll(async () => {
     await cleanupTestUser(userA.id);
     await cleanupTestUser(userB.id);
     await cleanupTestIngredient(ingredientId);
+    await cleanupTestIngredient(componentIngredientId);
   });
 
   // ── Paginación ─────────────────────────────────────────────────────────────
@@ -102,6 +105,92 @@ describe("Recipe Controller — Filtros, Paginación y Permisos", () => {
 
   // ── Visibilidad ─────────────────────────────────────────────────────────────
 
+  // Filtro por ingredientes fijos y de componentes.
+  describe("Filtro por ingrediente", () => {
+    let directRecipeId: number;
+    let componentRecipeId: number;
+    let componentIngredientName: string;
+
+    beforeAll(async () => {
+      componentIngredientName = (
+        await prisma.ingredient.findUniqueOrThrow({
+          where: { id: componentIngredientId },
+          select: { name: true },
+        })
+      ).name;
+
+      const directRecipe = await request(app)
+        .post("/api/recipes")
+        .set("Authorization", `Bearer ${userA.token}`)
+        .send({
+          title: "Filtro ingrediente directo",
+          servings: 2,
+          ingredients: [
+            {
+              ingredientId: componentIngredientId,
+              name: componentIngredientName,
+              quantity: 100,
+              unit: "g",
+            },
+          ],
+        });
+      directRecipeId = directRecipe.body.id;
+
+      const componentRecipe = await request(app)
+        .post("/api/recipes")
+        .set("Authorization", `Bearer ${userA.token}`)
+        .send({
+          title: "Filtro ingrediente en componente",
+          servings: 2,
+          ingredients: [
+            { ingredientId, name: "Ingrediente test", quantity: 1, unit: "g" },
+          ],
+          components: [
+            {
+              name: "Acompañamiento",
+              options: [
+                {
+                  name: componentIngredientName,
+                  ingredientId: componentIngredientId,
+                  ingredientName: componentIngredientName,
+                  quantity: 100,
+                  unit: "g",
+                  isDefault: true,
+                },
+              ],
+            },
+          ],
+        });
+      componentRecipeId = componentRecipe.body.id;
+    });
+
+    it("encuentra ingredientes fijos y de componentes sin distinguir mayúsculas", async () => {
+      const searchTerm = componentIngredientName.toUpperCase().slice(5, -5);
+      const res = await request(app)
+        .get(`/api/recipes?visibility=mine&ingredient=${encodeURIComponent(searchTerm)}`)
+        .set("Authorization", `Bearer ${userA.token}`);
+
+      expect(res.status).toBe(200);
+      const ids = res.body.data.map((recipe: any) => recipe.id);
+      expect(ids).toContain(directRecipeId);
+      expect(ids).toContain(componentRecipeId);
+    });
+
+    it("exige que la receta contenga todos los ingredientes seleccionados", async () => {
+      const res = await request(app)
+        .get(
+          `/api/recipes?visibility=mine&ingredientIds=${ingredientId},${componentIngredientId}`,
+        )
+        .set("Authorization", `Bearer ${userA.token}`);
+
+      expect(res.status).toBe(200);
+      const ids = res.body.data.map((recipe: any) => recipe.id);
+      expect(ids).toContain(componentRecipeId);
+      expect(ids).not.toContain(directRecipeId);
+    });
+  });
+
+  // Filtro por visibilidad y recetas ocultas.
   describe("Filtro de visibilidad", () => {
     let publicRecipeId: number;
     let privateRecipeId: number;

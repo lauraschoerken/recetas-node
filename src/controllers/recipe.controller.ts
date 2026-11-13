@@ -87,6 +87,7 @@ export class RecipeController {
     @QueryParam("search") search?: string,
     @QueryParam("visibility") visibility?: string,
     @QueryParam("ingredient") ingredient?: string,
+    @QueryParam("ingredientIds") ingredientIds?: string,
     @QueryParam("difficulty") difficulty?: string,
     @QueryParam("minCookTime") minCookTime?: number,
     @QueryParam("maxCookTime") maxCookTime?: number,
@@ -109,12 +110,19 @@ export class RecipeController {
           .map(Number)
           .filter((n) => !isNaN(n) && n > 0)
       : [];
+    const parsedIngredientIds = ingredientIds
+      ? ingredientIds
+          .split(",")
+          .map(Number)
+          .filter((n) => !isNaN(n) && n > 0)
+      : [];
     return recipeService.getAll(req.userId!, {
       page,
       pageSize,
       search,
       visibility,
       ingredient,
+      ingredientIds: parsedIngredientIds,
       difficulty,
       minCookTime,
       maxCookTime,
