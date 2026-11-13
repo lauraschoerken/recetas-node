@@ -104,6 +104,7 @@ export class RecipeService {
       search?: string;
       visibility?: string;
       ingredient?: string;
+      ingredientIds?: number[];
       difficulty?: string;
       minCookTime?: number;
       maxCookTime?: number;
@@ -126,6 +127,7 @@ export class RecipeService {
       search = "",
       visibility = "all",
       ingredient = "",
+      ingredientIds: selectedIngredientIds = [],
       difficulty = "",
       minCookTime,
       maxCookTime,
@@ -178,14 +180,52 @@ export class RecipeService {
       searchIds = rows.map((r) => r.id);
     }
 
-    // Búsqueda por ingrediente insensible a tildes
-    let ingredientIds: number[] | null = null;
+    const buildIngredientPresenceFilter = (ids: number[]) => ({
+      OR: [
+        {
+          ingredients: {
+            some: { ingredientId: { in: ids } },
+          },
+        },
+        {
+          components: {
+            some: {
+              options: {
+                some: {
+                  OR: [
+                    { ingredientId: { in: ids } },
+                    {
+                      recipe: {
+                        ingredients: {
+                          some: { ingredientId: { in: ids } },
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        },
+      ],
+    });
+
+    // El texto libre conserva compatibilidad con clientes antiguos. Los IDs
+    // seleccionados se aplican individualmente para exigir que estén todos.
+    const ingredientFilters: object[] = Array.from(
+      new Set(selectedIngredientIds),
+    ).map((id) => buildIngredientPresenceFilter([id]));
     if (ingredient) {
       const pattern = `%${ingredient}%`;
       const rows = await prisma.$queryRaw<{ id: number }[]>(
         Prisma.sql`SELECT id FROM "Ingredient" WHERE unaccent(lower(name)) LIKE unaccent(lower(${pattern}))`,
       );
-      ingredientIds = rows.map((r) => r.id);
+      const matchingIds = rows.map((r) => r.id);
+      ingredientFilters.push(
+        matchingIds.length > 0
+          ? buildIngredientPresenceFilter(matchingIds)
+          : { id: -1 },
+      );
     }
 
     const buildHiddenFilter = (scope: string) =>
@@ -202,17 +242,7 @@ export class RecipeService {
         visibilityFilter,
         buildHiddenFilter(hiddenScope),
         ...(searchIds !== null ? [{ id: { in: searchIds } }] : []),
-        ...(ingredientIds !== null
-          ? ingredientIds.length > 0
-            ? [
-                {
-                  ingredients: {
-                    some: { ingredientId: { in: ingredientIds } },
-                  },
-                },
-              ]
-            : [{ id: -1 }] // sin coincidencias → sin resultados
-          : []),
+        ...ingredientFilters,
         ...(difficulty
           ? [
               {

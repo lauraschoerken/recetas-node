@@ -41,6 +41,7 @@ export const backupService = {
           customFat: true,
           customFiber: true,
           planningAlertScope: true,
+		  recipeCardStyle: true,
         },
       }),
       // Solo ingredientes privados creados por el usuario (no los globales)
@@ -140,6 +141,7 @@ export const backupService = {
                 customFat: userProfile.customFat,
                 customFiber: userProfile.customFiber,
                 planningAlertScope: userProfile.planningAlertScope,
+				recipeCardStyle: userProfile.recipeCardStyle,
               },
             ]
           : [],
@@ -538,6 +540,13 @@ export const backupService = {
                     incoming.planningAlertScope ?? null,
                     current.planningAlertScope,
                   ),
+			recipeCardStyle:
+			  mode === "overwrite"
+			    ? (incoming.recipeCardStyle ?? null)
+			    : mergeIfKeep(
+			        incoming.recipeCardStyle ?? null,
+			        current.recipeCardStyle,
+			      ),
           },
         });
       }
